@@ -210,12 +210,34 @@ void seqplay::setWrenches(const double *i_wrenches, double i_tm)
 	}
 }
 
+void seqplay::setJointTorques(const double *jtq, double tm)
+{
+	if (tm == 0){
+		interpolators[TQ]->set(jtq);
+	}else{
+		interpolators[TQ]->setGoal(jtq, tm);
+	}
+}
+
+void seqplay::getJointTorques(double *jtq)
+{
+    interpolators[TQ]->get(jtq, false);
+}
+
 void seqplay::setJointAngle(unsigned int i_rank, double jv, double tm)
 {
     double pos[m_dof];
 	getJointAngles(pos);
     pos[i_rank] = jv;
     interpolators[Q]->setGoal(pos, tm);
+}
+
+void seqplay::setJointTorque(unsigned int i_rank, double jtq, double tm)
+{
+    double tq[m_dof];
+	getJointTorques(tq);
+    tq[i_rank] = jtq;
+    interpolators[TQ]->setGoal(tq, tm);
 }
 
 void seqplay::playPattern(std::vector<const double*> pos, std::vector<const double*> zmp, std::vector<const double*> rpy, std::vector<double> tm, const double *qInit, unsigned int len)

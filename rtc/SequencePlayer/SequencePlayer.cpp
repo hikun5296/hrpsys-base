@@ -507,6 +507,26 @@ bool SequencePlayer::setJointAnglesSequenceFull(const OpenHRP::dSequenceSequence
     return m_seq->setJointAnglesSequenceFull(v_jvss, v_vels, v_torques, v_poss, v_rpys, v_accs, v_zmps, v_wrenches, v_optionals, v_tms);
 }
 
+bool SequencePlayer::setJointTorques(const double *tq, double tm)
+{
+    if ( m_debugLevel > 0 ) {
+        std::cerr << __PRETTY_FUNCTION__ << std::endl;
+    }
+    Guard guard(m_mutex);
+    m_seq->setJointTorques(tq, tm);
+    return true;
+}
+
+bool SequencePlayer::setJointTorque(short id, double tq, double tm)
+{
+    if ( m_debugLevel > 0 ) {
+        std::cerr << __PRETTY_FUNCTION__ << std::endl;
+    }
+    Guard guard(m_mutex);
+    m_seq->setJointTorque(id, tq, tm);
+    return true;
+}
+
 bool SequencePlayer::setBasePos(const double *pos, double tm)
 {
     if ( m_debugLevel > 0 ) {

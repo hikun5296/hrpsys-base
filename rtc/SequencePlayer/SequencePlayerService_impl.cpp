@@ -30,6 +30,15 @@ CORBA::Boolean SequencePlayerService_impl::setJointAngles(const dSequence& jvs, 
   return m_player->setJointAngles(jvs.get_buffer(), tm);
 }
 
+CORBA::Boolean SequencePlayerService_impl::setJointTorques(const dSequence& jtq, CORBA::Double tm)
+{
+  if (jtq.length() != (unsigned int)(m_player->robot()->numJoints())) {
+      std::cerr << __PRETTY_FUNCTION__ << " num of joint is differ, input:" << jtq.length() << ", robot:" << (unsigned int)(m_player->robot()->numJoints()) << std::endl;
+      return false;
+  }
+  return m_player->setJointTorques(jtq.get_buffer(), tm);
+}
+
 CORBA::Boolean SequencePlayerService_impl::setJointAnglesWithMask(const dSequence& jvs, const bSequence& mask, CORBA::Double tm)
 {
     if (jvs.length() != (unsigned int)(m_player->robot()->numJoints())
@@ -192,6 +201,18 @@ CORBA::Boolean SequencePlayerService_impl::setJointAngle(const char *jname, CORB
     }
     int id = l->jointId;
     return m_player->setJointAngle(id, jv, tm);
+}
+
+CORBA::Boolean SequencePlayerService_impl::setJointTorque(const char *jname, CORBA::Double jtq, CORBA::Double tm)
+{
+    BodyPtr r = m_player->robot();
+    Link *l = r->link(jname);
+    if (!l){
+        std::cerr << "can't find(" << jname << ")" << std::endl;
+        return false;
+    }
+    int id = l->jointId;
+    return m_player->setJointTorque(id, jtq, tm);
 }
 
 CORBA::Boolean SequencePlayerService_impl::setBasePos(const dSequence& pos, CORBA::Double tm)
