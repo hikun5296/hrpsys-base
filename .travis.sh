@@ -37,7 +37,8 @@ travis_time_start mongo_hack
 
 # MongoDB hack
 dpkg -s mongodb || echo "ok"; export HAVE_MONGO_DB=$?
-if [ $HAVE_MONGO_DB == 0 ]; then sudo apt-get remove -qq -y mongodb mongodb-10gen || echo "ok"; fi
+# Remove configuration file for mongodb using --purge option (reported in https://github.com/fkanehiro/hrpsys-base/pull/900#issuecomment-162392884)
+if [ $HAVE_MONGO_DB == 0 ]; then sudo apt-get remove --purge -qq -y mongodb mongodb-10gen || echo "ok"; fi
 if [ $HAVE_MONGO_DB == 0 ]; then sudo apt-get install -qq -y mongodb-clients mongodb-server -o Dpkg::Options::="--force-confdef" || echo "ok"; fi # default actions
 
 travis_time_end
@@ -361,6 +362,12 @@ case $TEST_PACKAGE in
         #https://github.com/start-jsk/rtmros_hironx/pull/358
         if [ -e /opt/ros/hydro/lib/python2.7/dist-packages/hironx_ros_bridge/hironx_client.py ]; then
             sudo wget https://raw.githubusercontent.com/k-okada/rtmros_hironx/stop_unfinished_battle/hironx_ros_bridge/src/hironx_ros_bridge/hironx_client.py -O /opt/ros/hydro/lib/python2.7/dist-packages/hironx_ros_bridge/hironx_client.py
+        fi
+        #https://github.com/start-jsk/rtmros_common/commit/51ec26b899f09304705fe0528a068e57b061b9b7
+        #https://github.com/start-jsk/rtmros_common/pull/880
+        #https://github.com/start-jsk/rtmros_common/pull/879
+        if [ -e /opt/ros/hydro/share/hrpsys_ros_bridge/test/test-samplerobot.test ]; then
+            sudo wget https://raw.githubusercontent.com/start-jsk/rtmros_common/1.3.1/hrpsys_ros_bridge/test/test-samplerobot.test -O /opt/ros/hydro/share/hrpsys_ros_bridge/test/test-samplerobot.test
         fi
         travis_time_end
 
