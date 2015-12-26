@@ -116,6 +116,7 @@ class Stabilizer
   void calcSwingSupportLimbGain();
   void calcTPCC();
   void calcEEForceMomentControl();
+  void calcEEForceMomentAnkleTorqueControl();
   void getParameter(OpenHRP::StabilizerService::stParam& i_stp);
   void setParameter(const OpenHRP::StabilizerService::stParam& i_stp);
   void setBoolSequenceParam (std::vector<bool>& st_bool_values, const OpenHRP::StabilizerService::BoolSequence& output_bool_values, const std::string& prop_name);
@@ -248,6 +249,9 @@ class Stabilizer
     double eefm_pos_compensation_limit, eefm_rot_compensation_limit;
     hrp::Vector3 ref_force, ref_moment;
     double swing_support_gain, support_time;
+    //for ankle torque
+    std::string roll_link_name, pitch_link_name;
+    double ankle_torque_roll, ankle_torque_pitch;
   };
   enum cmode {MODE_IDLE, MODE_AIR, MODE_ST, MODE_SYNC_TO_IDLE, MODE_SYNC_TO_AIR} control_mode;
   // members
@@ -258,7 +262,7 @@ class Stabilizer
   hrp::dvector transition_joint_q, qorg, qrefv;
   std::vector<STIKParam> stikp;
   std::map<std::string, size_t> contact_states_index_map;
-  std::vector<bool> contact_states, prev_contact_states, is_ik_enable, is_feedback_control_enable, is_zmp_calc_enable;
+  std::vector<bool> contact_states, prev_contact_states, is_ik_enable, is_feedback_control_enable, is_zmp_calc_enable , is_ankle_torque_enable;
   double dt;
   int transition_count, loop;
   bool is_legged_robot, on_ground, is_emergency, is_seq_interpolating, reset_emergency_flag, eefm_use_force_difference_control, initial_cp_too_large_error;

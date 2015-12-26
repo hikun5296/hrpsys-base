@@ -21,7 +21,8 @@ module OpenHRP
       TPCC,
       EEFM,
       EEFMQP,
-      EEFMQPCOP
+      EEFMQPCOP,
+      EEFMAT
     };
 
     /**
@@ -174,6 +175,8 @@ module OpenHRP
       sequence<AutoBalancerService::Footstep> end_effector_list;
       /// whether an emergency stop is used while walking
       boolean is_estop_while_walking;
+      /// use torque control at ankle
+      BoolSequence is_ankle_torque_enable;
     };
 
     /**
