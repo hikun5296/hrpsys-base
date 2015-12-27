@@ -110,6 +110,7 @@ class Stabilizer
   void sync_2_st ();
   void sync_2_idle();
   bool calcZMP(hrp::Vector3& ret_zmp, const double zmp_z);
+  bool calcZMPAnkleTorque(hrp::Vector3& ret_zmp, const double zmp_z);
   void calcStateForEmergencySignal();
   void calcRUNST();
   void moveBasePosRotForBodyRPYControl ();
@@ -146,6 +147,7 @@ class Stabilizer
   // </rtc-template>
   RTC::TimedDoubleSeq m_qCurrent;
   RTC::TimedDoubleSeq m_qRef;
+  RTC::TimedDoubleSeq m_tauCurrent;
   RTC::TimedDoubleSeq m_tau;
   RTC::TimedOrientation3D m_rpy;
   RTC::TimedPoint3D m_zmpRef;
@@ -177,6 +179,7 @@ class Stabilizer
   // <rtc-template block="inport_declare">
   RTC::InPort<RTC::TimedDoubleSeq> m_qCurrentIn;
   RTC::InPort<RTC::TimedDoubleSeq> m_qRefIn;
+  RTC::InPort<RTC::TimedDoubleSeq> m_tauCurrentIn;
   RTC::InPort<RTC::TimedOrientation3D> m_rpyIn;
   RTC::InPort<RTC::TimedPoint3D> m_zmpRefIn;
   RTC::InPort<RTC::TimedPoint3D> m_basePosIn;
@@ -276,7 +279,7 @@ class Stabilizer
   hrp::Vector3 ref_zmp, ref_cog, ref_cp, ref_cogvel, rel_ref_cp, prev_ref_cog, prev_ref_zmp;
   hrp::Vector3 act_zmp, act_cog, act_cogvel, act_cp, rel_act_zmp, rel_act_cp, prev_act_cog, act_base_rpy, current_base_rpy, current_base_pos, sbp_cog_offset;
   hrp::Vector3 foot_origin_offset[2];
-  std::vector<double> prev_act_force_z;
+  std::vector<double> prev_act_force_z, prev_act_force_z_torque;
   double zmp_origin_off, transition_smooth_gain;
   boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > act_cogvel_filter;
   std::vector<boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > > target_ee_diff_p_filter;

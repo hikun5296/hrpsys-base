@@ -380,6 +380,7 @@ class HrpsysConfigurator:
                 connectPorts(self.st.port("emergencySignal"), self.es.port("emergencySignal"))
             connectPorts(self.st.port("emergencySignal"), self.abc.port("emergencySignal"))
             connectPorts(self.st.port("tau"), self.rh.port("tauRef"))
+            connectPorts(self.rh.port("tau"), self.st.port("tauCurrent"))
 
         # ref force moment connection
         for sen in self.getForceSensorNames():

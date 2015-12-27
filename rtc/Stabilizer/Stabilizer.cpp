@@ -44,6 +44,7 @@ Stabilizer::Stabilizer(RTC::Manager* manager)
     // <rtc-template block="initializer">
     m_qCurrentIn("qCurrent", m_qCurrent),
     m_qRefIn("qRef", m_qRef),
+    m_tauCurrentIn("tauCurrent", m_tauCurrent),
     m_rpyIn("rpy", m_rpy),
     m_zmpRefIn("zmpRef", m_zmpRef),
     m_StabilizerServicePort("StabilizerService"),
@@ -104,6 +105,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   // Set InPort buffers
   addInPort("qCurrent", m_qCurrentIn);
   addInPort("qRef", m_qRefIn);
+  addInPort("tauCurrent", m_tauCurrentIn);
   addInPort("rpy", m_rpyIn);
   addInPort("zmpRef", m_zmpRefIn);
   addInPort("basePosIn", m_basePosIn);
@@ -242,9 +244,10 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
       size_t ankles_num = ankles_str.size()/ankle_prop_num;
       for (size_t j = 0; j < ankles_num; j++) {
         std::string ankle_ee_name, rlink_name, plink_name;
-        coil::stringTo(ankle_ee_name, ankles_str[i*ankle_prop_num].c_str());
-        coil::stringTo(rlink_name, ankles_str[i*ankle_prop_num+1].c_str());
-        coil::stringTo(plink_name, ankles_str[i*ankle_prop_num+2].c_str());
+        coil::stringTo(ankle_ee_name, ankles_str[j*ankle_prop_num].c_str());
+        coil::stringTo(rlink_name, ankles_str[j*ankle_prop_num+1].c_str());
+        coil::stringTo(plink_name, ankles_str[j*ankle_prop_num+2].c_str());
+        std::cerr << "[test] " << ankle_ee_name << ikp.ee_name <<std::endl;
         if (ikp.ee_name == ankle_ee_name) {
           ikp.roll_link_name = rlink_name;
           ikp.pitch_link_name = plink_name;
@@ -278,6 +281,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
       std::cerr << "[" << m_profile.instance_name << "]   target = " << m_robot->link(ikp.target_name)->name << ", base = " << ee_base << ", sensor_name = " << ikp.sensor_name << std::endl;
       std::cerr << "[" << m_profile.instance_name << "]   offset_pos = " << ikp.localp.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[m]" << std::endl;
       prev_act_force_z.push_back(0.0);
+      prev_act_force_z_torque.push_back(0.0);
     }
     m_contactStates.data.length(num);
   }
@@ -365,6 +369,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
 
   m_qCurrent.data.length(m_robot->numJoints());
   m_qRef.data.length(m_robot->numJoints());
+  m_tauCurrent.data.length(m_robot->numJoints());
   m_tau.data.length(m_robot->numJoints());
   transition_joint_q.resize(m_robot->numJoints());
   qorg.resize(m_robot->numJoints());
@@ -471,6 +476,10 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
   }
   if (m_qCurrentIn.isNew()) {
     m_qCurrentIn.read();
+  }
+  if (m_tauCurrentIn.isNew()) {
+      std::cerr << "[st hoge]" <<m_tauCurrent.data[0] << m_tauCurrent.data[1] << m_tauCurrent.data[2] << m_tauCurrent.data[3] << m_tauCurrent.data[4] << m_tauCurrent.data[5] << m_tauCurrent.data[6] << m_tauCurrent.data[7] << std::endl;
+    m_tauCurrentIn.read();
   }
   if (m_rpyIn.isNew()) {
     m_rpyIn.read();
@@ -735,8 +744,12 @@ void Stabilizer::getActualParameters ()
   act_cog = m_robot->calcCM();
   // zmp
   on_ground = false;
+  hrp::Vector3 zmp_tmp;
   if (st_algorithm == OpenHRP::StabilizerService::EEFM || st_algorithm == OpenHRP::StabilizerService::EEFMQP || st_algorithm == OpenHRP::StabilizerService::EEFMQPCOP || st_algorithm == OpenHRP::StabilizerService::EEFMAT) {
+    on_ground = calcZMPAnkleTorque(zmp_tmp, zmp_origin_off+foot_origin_pos(2));
     on_ground = calcZMP(act_zmp, zmp_origin_off+foot_origin_pos(2));
+    std::cerr << "[st] [torque] " << m_wrenches[0].data[1] << " " << m_tauCurrent.data[m_robot->link(stikp[0].pitch_link_name)->jointId] << std::endl;
+    std::cerr << "[st] [debug] " << std::endl << std::endl << act_zmp << std::endl << std::endl << zmp_tmp << std::endl;
   } else {
     on_ground = calcZMP(act_zmp, ref_zmp(2));
   }
@@ -1119,7 +1132,66 @@ bool Stabilizer::calcZMP(hrp::Vector3& ret_zmp, const double zmp_z)
     ret_zmp = hrp::Vector3(tmpzmpx / tmpfz, tmpzmpy / tmpfz, zmp_z);
     return true; // on ground
   }
-};
+}
+
+bool Stabilizer::calcZMPAnkleTorque(hrp::Vector3& ret_zmp, const double zmp_z)
+{
+  double tmpzmpx = 0;
+  double tmpzmpy = 0;
+  double tmpfz = 0, tmpfz2 = 0.0;
+  for (size_t i = 0; i < stikp.size(); i++) {
+    if (!is_zmp_calc_enable[i]) continue;
+    hrp::Vector3 fsp;
+    hrp::Vector3 nf, nm;
+    hrp::ForceSensor* sensor = m_robot->sensor<hrp::ForceSensor>(stikp[i].sensor_name);
+    if (is_ankle_torque_enable[i]){
+      hrp::Link* r_link = m_robot->link(stikp[i].roll_link_name);
+      hrp::Link* p_link = m_robot->link(stikp[i].pitch_link_name);
+      //ankle is cartesian cordinate
+      fsp = r_link->p;
+      hrp::Matrix33 tmpR_z, tmpR_r, tmpR_p;
+      rats::rotm3times(tmpR_z, sensor->link->R, sensor->localR);
+      tmpR_r = r_link->R;
+      tmpR_p = p_link->R;
+      nf = tmpR_z * hrp::Vector3(0, 0, m_wrenches[i].data[2]);
+      nm = tmpR_r * hrp::Vector3(m_tauCurrent.data[r_link->jointId], 0, 0) + tmpR_p * hrp::Vector3(0, m_tauCurrent.data[p_link->jointId], 0);
+      tmpzmpx += nf(2) * fsp(0) - (fsp(2) - zmp_z) * nf(0) - nm(1);
+      tmpzmpy += nf(2) * fsp(1) - (fsp(2) - zmp_z) * nf(1) + nm(0);
+      tmpfz += nf(2);
+    } else {
+      fsp = sensor->link->p + sensor->link->R * sensor->localPos;
+      hrp::Matrix33 tmpR;
+      rats::rotm3times(tmpR, sensor->link->R, sensor->localR);
+      nf = tmpR * hrp::Vector3(m_wrenches[i].data[0], m_wrenches[i].data[1], m_wrenches[i].data[2]);
+      nm = tmpR * hrp::Vector3(m_wrenches[i].data[3], m_wrenches[i].data[4], m_wrenches[i].data[5]);
+      tmpzmpx += nf(2) * fsp(0) - (fsp(2) - zmp_z) * nf(0) - nm(1);
+      tmpzmpy += nf(2) * fsp(1) - (fsp(2) - zmp_z) * nf(1) + nm(0);
+      tmpfz += nf(2);
+    }
+    // calc ee-local COP
+    hrp::Link* target = m_robot->link(stikp[i].target_name);
+    hrp::Matrix33 eeR = target->R * stikp[i].localR;
+    hrp::Vector3 ee_fsp = eeR.transpose() * (fsp - (target->p + target->R * stikp[i].localp)); // ee-local force sensor pos
+    nf = eeR.transpose() * nf;
+    nm = eeR.transpose() * nm;
+    // ee-local total moment and total force at ee position
+    double tmpcopmy = nf(2) * ee_fsp(0) - nf(0) * ee_fsp(2) - nm(1);
+    double tmpcopmx = nf(2) * ee_fsp(1) - nf(1) * ee_fsp(2) + nm(0);
+    double tmpcopfz = nf(2);
+    m_COPInfo.data[i*3] = tmpcopmx;
+    m_COPInfo.data[i*3+1] = tmpcopmy;
+    m_COPInfo.data[i*3+2] = tmpcopfz;
+    prev_act_force_z_torque[i] = 0.85 * prev_act_force_z[i] + 0.15 * nf(2); // filter, cut off 5[Hz]
+    tmpfz2 += prev_act_force_z_torque[i];
+  }
+  if (tmpfz2 < contact_decision_threshold) {
+    ret_zmp = act_zmp;
+    return false; // in the air
+  } else {
+    ret_zmp = hrp::Vector3(tmpzmpx / tmpfz, tmpzmpy / tmpfz, zmp_z);
+    return true; // on ground
+  }
+}
 
 void Stabilizer::calcStateForEmergencySignal()
 {
@@ -1422,12 +1494,18 @@ void Stabilizer::calcEEForceMomentAnkleTorqueControl() {
               hrp::Vector3 torque_link_r, torque_link_p;
               hrp::Link* link_r = m_robot->link(ikp.roll_link_name);
               hrp::Link* link_p = m_robot->link(ikp.pitch_link_name);
-              torque_link_r = ikp.ref_moment + (foot_origin_pos - link_r->p).cross(ikp.ref_force);
-              torque_link_p = ikp.ref_moment + (foot_origin_pos - link_p->p).cross(ikp.ref_force);
+              //torque_link_r = ikp.ref_moment + (foot_origin_pos - link_r->p).cross(ikp.ref_force);
+              //torque_link_p = ikp.ref_moment + (foot_origin_pos - link_p->p).cross(ikp.ref_force);
+              torque_link_r = ikp.ref_moment + ikp.localp.cross(ikp.localR * ikp.ref_force);
+              torque_link_p = ikp.ref_moment + ikp.localp.cross(ikp.localR * ikp.ref_force);
               ikp.ankle_torque_roll = torque_link_r(0);
               //TODO if pitch joint link is tilted, yaw torque is generated
               ikp.ankle_torque_pitch = torque_link_p(1) / cos(m_robot->joint(link_r->jointId)->q);
-
+              std::cerr << "[st] roll q " << m_robot->joint(link_r->jointId)->q << " " << cos(m_robot->joint(link_r->jointId)->q) << std::endl;
+              std::cerr << "[st] localp " << ikp.localp(0) << " " << ikp.localp(1) << " " << ikp.localp(2) << std::endl;
+              std::cerr << "[st] localR*ref_force " << (ikp.localR * ikp.ref_force)(0) << " " << (ikp.localR * ikp.ref_force)(1) << " " << (ikp.localR * ikp.ref_force)(2) << std::endl;
+              std::cerr << "[st] ref_moment " << ikp.ref_force(0) << " " << ikp.ref_force(1) << " " << ikp.ref_force(2) << std::endl;
+              std::cerr << "[st] ref_moment " << ikp.ref_moment(0) << " " << ikp.ref_moment(1) << " " << ikp.ref_moment(2) << std::endl;
               std::cerr << "[st] " << ikp.ee_name << " ankle torque roll " <<ikp.ankle_torque_roll << std::endl;
               std::cerr << "[st] " << ikp.ee_name << " ankle torque pitch " <<ikp.ankle_torque_pitch << std::endl;
               //remove foot rpy diff
