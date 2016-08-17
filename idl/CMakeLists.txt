@@ -26,6 +26,7 @@ set(idl_files
   ServoControllerService.idl
   TorqueControllerService.idl
   ThermoLimiterService.idl
+  ReferenceForceUpdaterService.idl
   )
 
 set(openhrp_idl_files
@@ -104,7 +105,7 @@ add_library(${target} SHARED ${sources})
 target_link_libraries(${target} ${OPENRTM_LIBRARIES})
 
 install(TARGETS ${target}
-	LIBRARY DESTINATION lib CONFIGURATIONS Release Debug
+	LIBRARY DESTINATION lib
 )
 
 if(COMPILE_JAVA_STUFF)

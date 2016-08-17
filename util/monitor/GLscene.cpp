@@ -7,10 +7,10 @@
 #include <GL/glut.h>
 #endif
 #include <sys/time.h>
-#include "util/GLcamera.h"
-#include "util/GLlink.h"
-#include "util/GLbody.h"
-#include "util/LogManager.h"
+#include "hrpsys/util/GLcamera.h"
+#include "hrpsys/util/GLlink.h"
+#include "hrpsys/util/GLbody.h"
+#include "hrpsys/util/LogManager.h"
 #include "TimedRobotState.h"
 #include "GLscene.h"
 
@@ -159,7 +159,7 @@ void GLscene::showStatus()
                 // driver temperature
                 int temp = temperature(ss);
                 if (!temp){
-                    sprintf(buf, "--", temp);
+                    sprintf(buf, "--");
                 }else{
                     sprintf(buf, "%2d", temp);
                 }

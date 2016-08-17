@@ -247,6 +247,16 @@ class HrpsysConfigurator:
     log_version = None
     log_use_owned_ec = False
 
+    # Beeper
+    bp = None
+    bp_svc = None
+    bp_version = None
+
+    # ReferenceForceUpdater
+    rfu = None
+    rfu_svc = None
+    rfu_version = None
+
     # rtm manager
     ms = None
 
@@ -379,31 +389,37 @@ class HrpsysConfigurator:
             if self.es:
                 connectPorts(self.st.port("emergencySignal"), self.es.port("emergencySignal"))
             connectPorts(self.st.port("emergencySignal"), self.abc.port("emergencySignal"))
+            connectPorts(self.st.port("legMargin"), self.abc.port("legMargin"))
 
         # ref force moment connection
         for sen in self.getForceSensorNames():
-            if self.st:
+            if self.abc and self.st:
                 connectPorts(self.abc.port(sen),
                              self.st.port(sen + "Ref"))
-            if self.es:
-                connectPorts(self.sh.port(sen+"Out"),
-                                 self.es.port(sen+"In"))
-                if self.ic:
-                    connectPorts(self.es.port(sen+"Out"),
-                                 self.ic.port("ref_" + sen+"In"))
-                if self.abc:
-                    connectPorts(self.es.port(sen+"Out"),
-                                 self.abc.port("ref_" + sen))
-            else:
-                if self.ic:
-                    connectPorts(self.sh.port(sen+"Out"),
-                                 self.ic.port("ref_" + sen+"In"))
-                if self.abc:
-                    connectPorts(self.sh.port(sen+"Out"),
-                                 self.abc.port("ref_" + sen))
-            if self.abc and self.st:
                 connectPorts(self.abc.port("limbCOPOffset_"+sen),
                              self.st.port("limbCOPOffset_"+sen))
+            if self.rfu:
+                ref_force_port_from = self.rfu.port("ref_"+sen+"Out")
+            elif self.es:
+                ref_force_port_from = self.es.port(sen+"Out")
+            else:
+                ref_force_port_from = self.sh.port(sen+"Out")
+            if self.ic:
+                connectPorts(ref_force_port_from,
+                             self.ic.port("ref_" + sen+"In"))
+            if self.abc:
+                connectPorts(ref_force_port_from,
+                             self.abc.port("ref_" + sen))
+            if self.es:
+                connectPorts(self.sh.port(sen+"Out"),
+                             self.es.port(sen+"In"))
+                if self.rfu:
+                    connectPorts(self.es.port(sen+"Out"),
+                                 self.rfu.port("ref_" + sen+"In"))
+            else:
+                if self.rfu:
+                    connectPorts(self.sh.port(sen+"Out"),
+                                 self.rfu.port("ref_" + sen+"In"))
 
         #  actual force sensors
         if self.rmfo:
@@ -416,6 +432,9 @@ class HrpsysConfigurator:
                 if self.ic:
                     connectPorts(self.rmfo.port("off_" + sen.name),
                                  self.ic.port(sen.name))
+                if self.rfu:
+                    connectPorts(self.rmfo.port("off_" + sen.name),
+                                 self.rfu.port(sen.name))
                 if self.st:
                     connectPorts(self.rmfo.port("off_" + sen.name),
                                  self.st.port(sen.name))
@@ -430,6 +449,13 @@ class HrpsysConfigurator:
             if self.seq_version >= '315.3.0':
                 connectPorts(self.sh.port("basePosOut"), self.ic.port("basePosIn"))
                 connectPorts(self.sh.port("baseRpyOut"), self.ic.port("baseRpyIn"))
+        # connection for rfu
+        if self.rfu:
+            if self.es:
+                connectPorts(self.es.port("q"), self.rfu.port("qRef"))
+            if self.seq_version >= '315.3.0':
+                connectPorts(self.sh.port("basePosOut"), self.rfu.port("basePosIn"))
+                connectPorts(self.sh.port("baseRpyOut"), self.rfu.port("baseRpyIn"))
         # connection for tf
         if self.tf:
             # connection for actual torques
@@ -495,6 +521,16 @@ class HrpsysConfigurator:
         # connection for co
         if self.es:
             connectPorts(self.rh.port("servoState"), self.es.port("servoStateIn"))
+
+        if self.bp:
+            if self.tl:
+                connectPorts(self.tl.port("beepCommand"), self.bp.port("beepCommand"))
+            if self.es:
+                connectPorts(self.es.port("beepCommand"), self.bp.port("beepCommand"))
+            if self.el:
+                connectPorts(self.el.port("beepCommand"), self.bp.port("beepCommand"))
+            if self.co:
+                connectPorts(self.co.port("beepCommand"), self.bp.port("beepCommand"))
 
     def activateComps(self):
         '''!@brief
@@ -670,15 +706,17 @@ class HrpsysConfigurator:
             ['vs', "VirtualForceSensor"],
             ['rmfo', "RemoveForceSensorLinkOffset"],
             ['es', "EmergencyStopper"],
+            ['rfu', "ReferenceForceUpdater"],
             ['ic', "ImpedanceController"],
             ['abc', "AutoBalancer"],
             ['st', "Stabilizer"],
             ['co', "CollisionDetector"],
             ['tc', "TorqueController"],
             ['te', "ThermoEstimator"],
-            ['tl', "ThermoLimiter"],
             ['hes', "EmergencyStopper"],
             ['el', "SoftErrorLimiter"],
+            ['tl', "ThermoLimiter"],
+            ['bp', "Beeper"],
             ['log', "DataLogger"]
             ]
 
@@ -837,6 +875,9 @@ class HrpsysConfigurator:
         if self.rmfo != None:
             for sen in filter(lambda x: x.type == "Force", self.sensors):
                 self.connectLoggerPort(self.rmfo, "off_"+sen.name)
+        if self.rfu != None:
+            for sen in filter(lambda x: x.type == "Force", self.sensors):
+                self.connectLoggerPort(self.rfu, "ref_"+sen.name+"Out")
         self.log_svc.clear()
         ## parallel running log process (outside from rtcd) for saving logs by emergency signal
         if self.log and (self.log_use_owned_ec or not isinstance(self.log.owned_ecs[0], OpenRTM._objref_ExtTrigExecutionContextService)):
@@ -906,6 +947,11 @@ class HrpsysConfigurator:
         print(self.configurator_name + "simulation_mode : %s" % self.simulation_mode)
 
     def waitForRTCManagerAndRoboHardware(self, robotname="Robot", managerhost=nshost):
+        print("\033[93m%s waitForRTCManagerAndRoboHardware has renamed to " % self.configurator_name + \
+              "waitForRTCManagerAndRoboHardware: Please update your code\033[0m")
+        return self.waitForRTCManagerAndRobotHardware(robotname=robotname, managerhost=managerhost)
+
+    def waitForRTCManagerAndRobotHardware(self, robotname="Robot", managerhost=nshost):
         '''!@brief
         Wait for both RTC Manager (waitForRTCManager()) and RobotHardware (waitForRobotHardware())
 
@@ -1016,15 +1062,15 @@ class HrpsysConfigurator:
 
     def setJointAnglesSequence(self, angless, tms):
         '''!@brief
-        Set all joint angles.
+        Set all joint angles. len(angless) should be equal to len(tms).
         \verbatim
         NOTE: While this method does not check angle value range,
               any joints could emit position limit over error, which has not yet
               been thrown by hrpsys so that there's no way to catch on this python client. 
               Worthwhile opening an enhancement ticket at designated issue tracker.
         \endverbatim
-        @param sequence angles list of float: In degree.
-        @param tm sequence of float: Time to complete, In Second
+        @param sequential list of angles in float: In rad
+        @param tm sequential list of time in float: Time to complete, In Second
         '''
         for angles in angless:
             for i in range(len(angles)):
@@ -1041,8 +1087,8 @@ class HrpsysConfigurator:
               Worthwhile opening an enhancement ticket at designated issue tracker.
         \endverbatim
         @param gname str: Name of the joint group.
-        @param sequence angles list of float: In degree.
-        @param tm sequence of float: Time to complete, In Second
+        @param sequential list of angles in float: In rad
+        @param tm sequential list of time in float: Time to complete, In Second
         '''
         for angles in angless:
             for i in range(len(angles)):
@@ -1092,6 +1138,14 @@ class HrpsysConfigurator:
         @param gname str: Name of the joint group.
         '''
         self.seq_svc.waitInterpolationOfGroup(gname)
+
+    def setInterpolationMode(self, mode):
+        '''!@brief
+        Set interpolation mode. You may need to import OpenHRP in order to pass an argument. For more info See https://github.com/fkanehiro/hrpsys-base/pull/1012#issue-160802911. 
+        @param mode new interpolation mode. Either { OpenHRP.SequencePlayerService.LINEAR, OpenHRP.SequencePlayerService.HOFFARBIB }.
+        @return true if set successfully, false otherwise
+        '''
+        return self.seq_svc.setInterpolationMode(mode)
 
     def getJointAngles(self):
         '''!@brief
@@ -1997,7 +2051,6 @@ dr=0, dp=0, dw=0, tm=10, wait=True):
         Start default unstable RTCs controller mode.
         Currently Stabilzier, AutoBalancer, and ImpedanceController are started.
         '''
-        self.startStabilizer()
         for limb in ic_limbs:
             self.ic_svc.startImpedanceControllerNoWait(limb)
         if abc_limbs==None:
@@ -2006,6 +2059,7 @@ dr=0, dp=0, dw=0, tm=10, wait=True):
             else:
                 abc_limbs=["rleg", "lleg"]
         self.startAutoBalancer(abc_limbs)
+        self.startStabilizer()
         for limb in ic_limbs:
             self.ic_svc.waitImpedanceControllerTransition(limb)
 
@@ -2057,7 +2111,7 @@ dr=0, dp=0, dw=0, tm=10, wait=True):
         print(self.configurator_name + "start hrpsys")
 
         print(self.configurator_name + "finding RTCManager and RobotHardware")
-        self.waitForRTCManagerAndRoboHardware(robotname)
+        self.waitForRTCManagerAndRobotHardware(robotname)
         self.sensors = self.getSensors(url)
 
         print(self.configurator_name + "creating components")

@@ -33,6 +33,30 @@ elseif(WIN32)
   set(SH_SFX "bat")
 endif()
 
+# Specify include directory.
+#   After https://github.com/fkanehiro/hrpsys-base/pull/842, hrpsys-base local include files are used as "hrpsys/xx/yy.h".
+#   For this reason, we make ${CMAKE_BINARY_DIR}/hrpsys directory and generate symbolic link for related include files under it.
+#   To deal with include files in ${CMAKE_BINARY_DIR}/hrpsys as hrpsys-base local include files, we set cmake's include_directories before other include_directories setting to set higher priority for ${CMAKE_BINARY_DIR}/hrpsys.
+execute_process(
+  COMMAND mkdir -p ${CMAKE_BINARY_DIR}/hrpsys
+)
+if (NOT EXISTS ${CMAKE_BINARY_DIR}/hrpsys/io)
+  execute_process(
+    COMMAND ln -s ${PROJECT_SOURCE_DIR}/lib/io ${CMAKE_BINARY_DIR}/hrpsys/io
+   )
+endif()
+if (NOT EXISTS ${CMAKE_BINARY_DIR}/hrpsys/util)
+  execute_process(
+    COMMAND ln -s ${PROJECT_SOURCE_DIR}/lib/util ${CMAKE_BINARY_DIR}/hrpsys/util
+   )
+endif()
+if (NOT EXISTS ${CMAKE_BINARY_DIR}/hrpsys/idl)
+  execute_process(
+    COMMAND ln -s ${CMAKE_BINARY_DIR}/idl ${CMAKE_BINARY_DIR}/hrpsys/idl
+   )
+endif()
+include_directories(${CMAKE_BINARY_DIR})
+
 # OpenRTM-aist(>= 1.0.0)
 find_package(OpenRTM REQUIRED)
 if(EXISTS "${OPENRTM_DIR}/include/openrtm-1.1/rtm/RTObjectStateMachine.h")
@@ -46,9 +70,6 @@ link_directories(${OPENHRP_LIBRARY_DIRS})
 if(UNIX)
     add_definitions(${OPENHRP_DEFINITIONS})
 endif()
-
-include_directories(${PROJECT_SOURCE_DIR}/lib)
-include_directories(${CMAKE_BINARY_DIR}/idl)
 
 if(ENABLE_INSTALL_RPATH)
   set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib:$ORIGIN/../../../lib:${OPENHRP_LIBRARY_DIRS}")
@@ -70,7 +91,7 @@ if(COMPILE_JAVA_STUFF)
   set(javac_flags -target ${Java_VERSION_MAJOR}.${Java_VERSION_MINOR} -d . -sourcepath src)
 endif()
 
-if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL None OR CMAKE_BUILD_TYPE STREQUAL RelWithDebInfo)
+if(NOT CMAKE_BUILD_TYPE OR CMAKE_BUILD_TYPE STREQUAL None)
   set(
     CMAKE_BUILD_TYPE Release CACHE STRING
     "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
@@ -84,7 +105,7 @@ set(CPACK_PACKAGE_NAME hrpsys-base)
 set(CPACK_PACKAGE_VENDOR "AIST")
 set(CPACK_PACKAGE_CONTACT "Fumio Kanehiro <f-kanehiro@aist.go.jp>")
 set(CPACK_PACKAGE_VERSION_MAJOR 315)
-set(CPACK_PACKAGE_VERSION_MINOR 7)
+set(CPACK_PACKAGE_VERSION_MINOR 9)
 set(CPACK_PACKAGE_VERSION_PATCH 0)
 execute_process(
   COMMAND date +%Y%m%d%H%M
@@ -191,6 +212,13 @@ add_subdirectory(test)
 #if catkin environment
 string(REGEX MATCH "catkin" need_catkin "$ENV{_}")
 if(need_catkin OR "${CATKIN_BUILD_BINARY_PACKAGE}")
+  find_package(catkin)
+  if(catkin_FOUND)
+    catkin_package_xml()
+    if(NOT hrpsys_VERSION VERSION_EQUAL CPACK_PACKAGE_VERSION)
+      message( FATAL_ERROR "hrpsys_version (from package.xml): ${hrpsys_VERSION} is not equal CPACK_PACKAGE_VERSION: ${CPACK_PACKAGE_VERSION}" )
+    endif()
+  endif()
   install(CODE "file(WRITE \$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/share/doc/hrpsys/rospack_nosubdirs)")
   install(FILES package.xml DESTINATION share/hrpsys/)
   install(CODE "

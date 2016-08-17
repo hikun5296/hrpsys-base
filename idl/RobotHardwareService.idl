@@ -108,12 +108,12 @@ module OpenHRP
     void setJointControlMode(in string jname, in JointControlMode jcm);
 
     /**
-     * @brief remove offsets on sensor outputs form gyro sensors and accelerometers
+     * @brief remove offsets on sensor outputs form gyro sensors and accelerometers. This function takes 10[s]. Please keep the robot static.
      */
     void calibrateInertiaSensor();
 
     /**
-     * @brief remove offsets on sensor outputs form force/torque sensors
+     * @brief remove offsets on sensor outputs form force/torque sensors. This function takes 10[s]. Please keep the robot static and make sure that robot's sensors do not contact with any objects.
      */
     void removeForceSensorOffset();
 

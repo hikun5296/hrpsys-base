@@ -2,7 +2,7 @@
 #define __ROBOT_H__
 
 #include <boost/array.hpp>
-#include <boost/interprocess/sync/interprocess_semaphore.hpp>
+#include <semaphore.h>
 #include <hrpModel/Body.h>
 #include "io/iob.h"
 
@@ -354,7 +354,7 @@ private:
     std::string m_calibJointName, m_calibOptions;
     std::string m_pdgainsFilename;
     bool m_reportedEmergency;
-    boost::interprocess::interprocess_semaphore wait_sem;
+    sem_t wait_sem;
     double m_dt;
     std::vector<double> m_commandOld, m_velocityOld;
     hrp::Vector3 G;

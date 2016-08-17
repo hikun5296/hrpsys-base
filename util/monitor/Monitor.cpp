@@ -1,6 +1,6 @@
 #include <rtm/CorbaNaming.h>
 #include "Monitor.h"
-#include "util/OpenRTMUtil.h"
+#include "hrpsys/util/OpenRTMUtil.h"
 #include "GLscene.h"
 
 Monitor::Monitor(CORBA::ORB_var orb, const std::string &i_hostname,
@@ -231,7 +231,7 @@ void Monitor::showStatus(hrp::BodyPtr &body)
             // driver temperature
             int temp = temperature(ss);
             if (!temp){
-                fprintf(stdout, "-- ", temp);
+                fprintf(stdout, "-- ");
             }else{
                 if (temp >= 60) red();
                 fprintf(stdout, "%2d ", temp);
