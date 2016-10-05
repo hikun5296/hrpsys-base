@@ -10,6 +10,8 @@
 #ifndef AUTOBALANCER_H
 #define AUTOBALANCER_H
 
+#include <rtm/idl/BasicDataType.hh>
+#include <rtm/idl/ExtendedDataTypes.hh>
 #include <rtm/Manager.h>
 #include <rtm/DataFlowComponentBase.h>
 #include <rtm/CorbaPort.h>
@@ -133,8 +135,6 @@ class AutoBalancer
   std::vector<InPort<TimedDoubleSeq> *> m_ref_forceIn;
   TimedLong m_emergencySignal;
   InPort<TimedLong> m_emergencySignalIn;
-  TimedDoubleSeq m_legMargin;
-  InPort<TimedDoubleSeq> m_legMarginIn;
   // for debug
   TimedPoint3D m_cog;
   
