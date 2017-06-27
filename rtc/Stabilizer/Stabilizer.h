@@ -188,6 +188,7 @@ class Stabilizer
   RTC::TimedDoubleSeq m_allRefWrench;
   RTC::TimedDoubleSeq m_allEEComp;
   RTC::TimedDoubleSeq m_debugData;
+  RTC::TimedDoubleSeq m_force2tau;
   
   // DataInPort declaration
   // <rtc-template block="inport_declare">
@@ -233,6 +234,7 @@ class Stabilizer
   RTC::OutPort<RTC::TimedDoubleSeq> m_allRefWrenchOut;
   RTC::OutPort<RTC::TimedDoubleSeq> m_allEECompOut;
   RTC::OutPort<RTC::TimedDoubleSeq> m_debugDataOut;
+  RTC::OutPort<RTC::TimedDoubleSeq> m_force2tauOut;
   
   // </rtc-template>
 

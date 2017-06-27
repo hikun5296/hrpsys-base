@@ -98,6 +98,7 @@ Stabilizer::Stabilizer(RTC::Manager* manager)
     m_allRefWrenchOut("allRefWrench", m_allRefWrench),
     m_allEECompOut("allEEComp", m_allEEComp),
     m_debugDataOut("debugData", m_debugData),
+    m_force2tauOut("force2tau", m_force2tau),
     control_mode(MODE_IDLE),
     st_algorithm(OpenHRP::StabilizerService::TPCC),
     emergency_check_mode(OpenHRP::StabilizerService::NO_CHECK),
@@ -162,6 +163,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   addOutPort("allRefWrench", m_allRefWrenchOut);
   addOutPort("allEEComp", m_allEECompOut);
   addOutPort("debugData", m_debugDataOut);
+  addOutPort("force2tau", m_force2tauOut);
   
   // Set service provider to Ports
   m_StabilizerServicePort.registerProvider("service0", "StabilizerService", m_service0);
@@ -480,6 +482,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   m_allRefWrench.data.length(stikp.size() * 6); // 6 is wrench dim
   m_allEEComp.data.length(stikp.size() * 6); // 6 is pos+rot dim
   m_debugData.data.length(1); m_debugData.data[0] = 0.0;
+  m_force2tau.data.length(12);
 
   //
   szd = new SimpleZMPDistributor(dt);
@@ -739,6 +742,8 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
       m_currentBasePosOut.write();
       m_debugData.tm = m_qRef.tm;
       m_debugDataOut.write();
+      m_force2tau.tm = m_qRef.tm;
+      m_force2tauOut.write();
     }
     m_qRefOut.write();
     // emergencySignal
@@ -824,6 +829,54 @@ void Stabilizer::getActualParameters ()
     m_robot->rootLink()->R = current_root_R;
     m_robot->calcForwardKinematics();
   }
+  //debug
+  hrp::ForceSensor* rsensor = m_robot->sensor<hrp::ForceSensor>(stikp[0].sensor_name);
+  hrp::ForceSensor* lsensor = m_robot->sensor<hrp::ForceSensor>(stikp[1].sensor_name);
+  hrp::Link* rend = m_robot->link(stikp[0].target_name);
+  hrp::JointPath jp_r(m_robot->rootLink(), rend);
+  hrp::dmatrix JJ_r;
+  jp_r.calcJacobian(JJ_r);
+  hrp::dmatrix huga = hrp::dmatrix::Zero(6, 6);
+  huga.block(0, 0, 3, 3) = rend->R.transpose();
+  huga.block(3, 3, 3, 3) = rend->R.transpose();
+  JJ_r = huga * JJ_r;
+  double z = rsensor->localPos(2);
+  hrp::dmatrix hoge = hrp::dmatrix::Identity(6, 6);
+  hoge(0, 4) = z;
+  hoge(1, 3) = -z;
+  JJ_r = hoge * JJ_r;
+  hrp::Link* lend = m_robot->link(stikp[1].target_name);
+  hrp::JointPath jp_l(m_robot->rootLink(), lend);
+  hrp::dmatrix JJ_l;
+  jp_l.calcJacobian(JJ_l);
+  huga = hrp::dmatrix::Zero(6, 6);
+  huga.block(0, 0, 3, 3) = lend->R.transpose();
+  huga.block(3, 3, 3, 3) = lend->R.transpose();
+  JJ_l = huga * JJ_l;
+  z = lsensor->localPos(2);
+  hoge = hrp::dmatrix::Identity(6, 6);
+  hoge(0, 4) = z;
+  hoge(1, 3) = -z;
+  JJ_l = hoge * JJ_l;
+  hrp::dvector6 rf;
+  rf << m_wrenches[0].data[0], m_wrenches[0].data[1], m_wrenches[0].data[2], m_wrenches[0].data[3], m_wrenches[0].data[4], m_wrenches[0].data[5];
+  huga = hrp::dmatrix::Zero(6, 6);
+  huga.block(0, 0, 3, 3) = rsensor->localR;
+  huga.block(3, 3, 3, 3) = rsensor->localR;
+  rf = huga * rf;
+  hrp::dvector6 lf;
+  lf  << m_wrenches[1].data[0], m_wrenches[1].data[1], m_wrenches[1].data[2], m_wrenches[1].data[3], m_wrenches[1].data[4], m_wrenches[1].data[5];
+  huga = hrp::dmatrix::Zero(6, 6);
+  huga.block(0, 0, 3, 3) = lsensor->localR;
+  huga.block(3, 3, 3, 3) = lsensor->localR;
+  lf = huga * lf;
+  hrp::dvector rtau = JJ_r.transpose() * rf;
+  hrp::dvector ltau = JJ_l.transpose() * lf;
+  for (size_t i = 0; i < 6; i++) {
+    m_force2tau.data[i] = rtau(i);
+    m_force2tau.data[i+6] = ltau(i);
+  }
+  //
   // cog
   act_cog = m_robot->calcCM();
   // zmp
