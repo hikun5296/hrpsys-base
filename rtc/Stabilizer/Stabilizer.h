@@ -200,6 +200,9 @@ class Stabilizer
   RTC::TimedOrientation3D m_currentBaseRpy;
   RTC::TimedDoubleSeq m_allRefWrench;
   RTC::TimedDoubleSeq m_allEEComp;
+  RTC::TimedDoubleSeq m_refCogWrench;
+  RTC::TimedDoubleSeq m_actCogWrench;
+  RTC::TimedDoubleSeq m_allEEWrench;
   RTC::TimedDoubleSeq m_debugData;
   
   // DataInPort declaration
@@ -245,6 +248,9 @@ class Stabilizer
   RTC::OutPort<RTC::TimedOrientation3D> m_currentBaseRpyOut;
   RTC::OutPort<RTC::TimedDoubleSeq> m_allRefWrenchOut;
   RTC::OutPort<RTC::TimedDoubleSeq> m_allEECompOut;
+  RTC::OutPort<RTC::TimedDoubleSeq> m_refCogWrenchOut;
+  RTC::OutPort<RTC::TimedDoubleSeq> m_actCogWrenchOut;
+  RTC::OutPort<RTC::TimedDoubleSeq> m_allEEWrenchOut;
   RTC::OutPort<RTC::TimedDoubleSeq> m_debugDataOut;
   
   // </rtc-template>

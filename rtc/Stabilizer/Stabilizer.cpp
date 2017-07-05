@@ -97,6 +97,9 @@ Stabilizer::Stabilizer(RTC::Manager* manager)
     m_currentBaseRpyOut("currentBaseRpy", m_currentBaseRpy),
     m_allRefWrenchOut("allRefWrench", m_allRefWrench),
     m_allEECompOut("allEEComp", m_allEEComp),
+    m_refCogWrenchOut("refCogWrench", m_refCogWrench),
+    m_actCogWrenchOut("actCogWrench", m_actCogWrench),
+    m_allEEWrenchOut("allEEWrench", m_allEEWrench),
     m_debugDataOut("debugData", m_debugData),
     control_mode(MODE_IDLE),
     support_mode(MODE_NORMAL),
@@ -162,6 +165,9 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   addOutPort("currentBaseRpy", m_currentBaseRpyOut);
   addOutPort("allRefWrench", m_allRefWrenchOut);
   addOutPort("allEEComp", m_allEECompOut);
+  addOutPort("refCogWrench", m_refCogWrenchOut);
+  addOutPort("actCogWrench", m_actCogWrenchOut);
+  addOutPort("allEEWrench", m_allEEWrenchOut);
   addOutPort("debugData", m_debugDataOut);
   
   // Set service provider to Ports
@@ -545,6 +551,9 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   m_originActCogVel.data.x = m_originActCogVel.data.y = m_originActCogVel.data.z = 0.0;
   m_allRefWrench.data.length(stikp.size() * 6); // 6 is wrench dim
   m_allEEComp.data.length(stikp.size() * 6); // 6 is pos+rot dim
+  m_refCogWrench.data.length(6);
+  m_actCogWrench.data.length(6);
+  m_allEEWrench.data.length(stikp.size() * 6);
   m_debugData.data.length(1); m_debugData.data[0] = 0.0;
 
   qp_solver.push_back(qpOASES::SQProblem(1, 1));
@@ -807,6 +816,12 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
       m_actBaseRpyOut.write();
       m_currentBaseRpyOut.write();
       m_currentBasePosOut.write();
+      m_refCogWrench.tm = m_qRef.tm;
+      m_refCogWrenchOut.write();
+      m_actCogWrench.tm = m_qRef.tm;
+      m_actCogWrenchOut.write();
+      m_allEEWrench.tm = m_qRef.tm;
+      m_allEEWrenchOut.write();
       m_debugData.tm = m_qRef.tm;
       m_debugDataOut.write();
     }
@@ -3002,6 +3017,14 @@ void Stabilizer::torqueST()
             }
         }
         calcForceMapping(ee_force, enable_ee, joint_torques1);
+        for (size_t i = 0; i < act_ee_p.size(); i++) {
+            m_allEEWrench.data[i * 6 + 0] = ee_force[i](0);
+            m_allEEWrench.data[i * 6 + 1] = ee_force[i](1);
+            m_allEEWrench.data[i * 6 + 2] = ee_force[i](2);
+            m_allEEWrench.data[i * 6 + 3] = ee_force[i](3);
+            m_allEEWrench.data[i * 6 + 4] = ee_force[i](4);
+            m_allEEWrench.data[i * 6 + 5] = ee_force[i](5);
+        }
     }
     if (true) {
         hrp::Vector3 f_ga, tau_ga;
@@ -3094,6 +3117,12 @@ void Stabilizer::generateForce(const hrp::Matrix33& foot_origin_rot, const hrp::
     tau_ga = new_act_base_R * (tau_r - Krd * act_base_omega);
     //foot origin frame
     tau_ga = foot_origin_rot.transpose() * tau_ga;
+    m_refCogWrench.data[0] = f_ga(0);
+    m_refCogWrench.data[1] = f_ga(1);
+    m_refCogWrench.data[2] = f_ga(2);
+    m_refCogWrench.data[3] = tau_ga(0);
+    m_refCogWrench.data[4] = tau_ga(1);
+    m_refCogWrench.data[5] = tau_ga(2);
 }
 
 void Stabilizer::generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_foot, hrp::Vector3& tau_foot, size_t i)
@@ -3215,9 +3244,17 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
         status = qp_solver[solver_id].init(H, g, A, lb, ub, lbA, ubA, nWSR);
     }
     qp_solver[solver_id].getPrimalSolution(xOpt);
+    hrp::dvector6 actCogWrench = hrp::dvector6::Zero();
     for (size_t i = 0; i < ee_num; i++) {
         ee_force.push_back(output.col(i));
+        actCogWrench += Gc.block(0, i * 6, 6, 6) * ee_force[i];
     }
+    m_actCogWrench.data[0] = actCogWrench(0);
+    m_actCogWrench.data[1] = actCogWrench(1);
+    m_actCogWrench.data[2] = actCogWrench(2);
+    m_actCogWrench.data[3] = actCogWrench(3);
+    m_actCogWrench.data[4] = actCogWrench(4);
+    m_actCogWrench.data[5] = actCogWrench(5);
     if (DEBUGP) {
         hrp::dvector y(state_dim+const_dim);
         qpOASES::real_t* yOpt = (qpOASES::real_t*)y.data();
