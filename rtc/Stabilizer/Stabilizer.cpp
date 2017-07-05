@@ -101,6 +101,7 @@ Stabilizer::Stabilizer(RTC::Manager* manager)
     m_actCogWrenchOut("actCogWrench", m_actCogWrench),
     m_allEEWrenchOut("allEEWrench", m_allEEWrench),
     m_debugDataOut("debugData", m_debugData),
+
     control_mode(MODE_IDLE),
     support_mode(MODE_NORMAL),
     st_algorithm(OpenHRP::StabilizerService::TPCC),
@@ -3140,7 +3141,7 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     f_tau << f_ga, tau_ga;
     size_t ee_num = enable_ee.size();
     size_t state_dim = 6 * ee_num;
-    double a = 100, b = 100, c = 1;
+    double a = 100, b = 100, c = 0.000001;
 
     //calc Gc
     hrp::dmatrix Gc(6, state_dim);
@@ -3177,7 +3178,7 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     hrp::dmatrix friction;
     hrp::dvector upperFrictionLimit;
     hrp::dvector lowerFrictionLimit;
-    size_t friction_dim = makeFrictionConstraint(enable_ee, 0.9, friction, upperFrictionLimit, lowerFrictionLimit);
+    size_t friction_dim = makeFrictionConstraint(enable_ee, 0.3, friction, upperFrictionLimit, lowerFrictionLimit);
 
     //cop constraint
     hrp::dmatrix cop;
@@ -3199,7 +3200,7 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     upperConstLimit << upperTauLimit, upperFrictionLimit, upperCopLimit, upperTauzLimit;
     lowerConstLimit << lowerTauLimit, lowerFrictionLimit, lowerCopLimit, lowerTauzLimit;
 
-    Eigen::Matrix<double, -1, -1, Eigen::RowMajor> Q = Gc.transpose() * I1 * Gc + I2 + 5 * Gc2.transpose() * Gc2;
+    Eigen::Matrix<double, -1, -1, Eigen::RowMajor> Q = Gc.transpose() * I1 * Gc + I2 + 50 * Gc2.transpose() * Gc2;
     Eigen::Matrix<double, -1, -1, Eigen::RowMajor> C = -Gc.transpose() * I1 * f_tau;
     hrp::dmatrix upperStateLimit(6, ee_num);
     hrp::dmatrix lowerStateLimit(6, ee_num);

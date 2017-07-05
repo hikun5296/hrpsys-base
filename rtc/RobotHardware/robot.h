@@ -264,6 +264,22 @@ public:
     bool setServoGainPercentage(const char *i_jname, double i_percentage);
 
     /**
+       \brief set the parcentage to the default servo P gain
+       \param name joint name, part name or "all"
+       \param percentage to joint servo gain[0-100]
+       \return true if set successfully, false otherwise 
+    */
+    bool setServoPGainPercentage(const char *i_jname, double i_percentage);
+
+    /**
+       \brief set the parcentage to the default servo D gain
+       \param name joint name, part name or "all"
+       \param percentage to joint servo gain[0-100]
+           \return true if set successfully, false otherwise 
+    */
+    bool setServoDGainPercentage(const char *i_jname, double i_percentage);
+
+    /**
        \brief set the parcentage to the default servo torque gain
        \param name joint name, part name or "all"
        \param percentage to joint servo gain[0-100]
