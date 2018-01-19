@@ -3504,7 +3504,15 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
             }
         }
     }
-    ret = -(J-CMJ).transpose();
+    hrp::dmatrix H = hrp::dmatrix::Zero(6 * ee_num, 6 * ee_num);
+    for (size_t i = 0; i < ee_num; i++) {
+        H.block(i * 6 + 0, i * 6 + 0, 3, 3) = act_see_R[enable_ee[i]];
+        H.block(i * 6 + 3, i * 6 + 0, 3, 3) = hrp::hat(act_see_p[enable_ee[i]]  - act_cog) * act_see_R[enable_ee[i]];
+        H.block(i * 6 + 0, i * 6 + 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
+        H.block(i * 6 + 3, i * 6 + 3, 3, 3) = act_see_R[enable_ee[i]];
+    }
+    //J_g^T H -J^T
+    ret = CMJ.transpose() * H - J.transpose();
 }
 
 void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint)
