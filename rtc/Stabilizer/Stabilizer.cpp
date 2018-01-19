@@ -333,6 +333,55 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
     m_will_fall_counter.resize(num);
   }
 
+  // setting from conf file for TorqueST
+  // rleg,TARGET_LINK,BASE_LINK,x,y,z,rx,ry,rz,rth #<=pos + rot (axis+angle),front,rear,left,right
+  coil::vstring support_end_effectors_str = coil::split(prop["support_end_effectors"], ",");
+  if (support_end_effectors_str.size() > 0) {
+    size_t prop_num = 14;
+    size_t num = support_end_effectors_str.size()/prop_num;
+    for (size_t i = 0; i < num; i++) {
+      std::string ee_name, ee_target, ee_base;
+      coil::stringTo(ee_name, support_end_effectors_str[i*prop_num].c_str());
+      coil::stringTo(ee_target, support_end_effectors_str[i*prop_num+1].c_str());
+      coil::stringTo(ee_base, support_end_effectors_str[i*prop_num+2].c_str());
+      SEEParam tmp;
+      for (size_t j = 0; j < 3; j++) {
+        coil::stringTo(tmp.localp(j), support_end_effectors_str[i*prop_num+3+j].c_str());
+      }
+      double tmpv[4];
+      for (int j = 0; j < 4; j++ ) {
+        coil::stringTo(tmpv[j], support_end_effectors_str[i*prop_num+6+j].c_str());
+      }
+      tmp.localR = Eigen::AngleAxis<double>(tmpv[3], hrp::Vector3(tmpv[0], tmpv[1], tmpv[2])).toRotationMatrix(); // rotation in VRML is represented by axis + angle
+      tmp.target_name = ee_target;
+      tmp.ee_name = ee_name;
+      coil::stringTo(tmp.support_front_margin, support_end_effectors_str[i*prop_num+10].c_str());
+      coil::stringTo(tmp.support_rear_margin, support_end_effectors_str[i*prop_num+11].c_str());
+      coil::stringTo(tmp.support_left_margin, support_end_effectors_str[i*prop_num+12].c_str());
+      coil::stringTo(tmp.support_right_margin, support_end_effectors_str[i*prop_num+13].c_str());
+      see.push_back(tmp);
+    }
+  } else { //use sitkp
+    for (size_t i = 0; i < stikp.size(); i++) {
+      SEEParam tmp;
+      tmp.target_name = stikp[i].target_name;
+      tmp.ee_name = stikp[i].ee_name;
+      tmp.parent_name = stikp[i].parent_name;
+      tmp.localp = stikp[i].localp;
+      tmp.localR = stikp[i].localR;
+      tmp.support_front_margin = -1.0;
+      tmp.support_rear_margin = -1.0;
+      tmp.support_left_margin = -1.0;
+      tmp.support_right_margin = -1.0;
+      see.push_back(tmp);
+    }
+  }
+  for (size_t i = 0; i < see.size(); i++) {
+    act_see_p.push_back(hrp::Vector3::Zero());
+    act_see_R.push_back(hrp::Matrix33::Identity());
+    support_ee_index_map.insert(std::pair<std::string, size_t>(see[i].ee_name, i));
+  }
+
   std::vector<std::pair<hrp::Link*, hrp::Link*> > interlocking_joints;
   readInterlockingJointsParamFromProperties(interlocking_joints, m_robot, prop["interlocking_joints"], std::string(m_profile.instance_name));
   if (interlocking_joints.size() > 0) {
@@ -902,6 +951,12 @@ void Stabilizer::getActualParameters ()
       act_ee_omega[i](2) = (omega_mat(1,0) - omega_mat(0,1)) / 2;
       act_ee_omega[i] = act_ee_omega_filter[i]->passFilter(act_ee_omega[i]);
       prev_act_ee_R[i] = act_ee_R[i];
+    }
+    for (size_t i = 0; i < see.size(); i++) {
+      hrp::Link* target = m_robot->link(see[i].target_name);
+      hrp::Vector3 _act_see_p = target->p + target->R * see[i].localp;
+      act_see_p[i] = foot_origin_rot.transpose() * (_act_see_p - foot_origin_pos);
+      act_see_R[i] = foot_origin_rot.transpose() * (target->R * see[i].localR);
     }
     prev_act_foot_origin_rot = foot_origin_rot;
     // capture point
@@ -2892,10 +2947,11 @@ void Stabilizer::torqueST()
     std::vector<hrp::dvector6> ee_force, ee_force2;
     std::vector<int> enable_ee, enable_ee2;
     std::vector<int> enable_joint, enable_joint2;
-    for (size_t i = 0; i < act_ee_p.size(); i++) {
-        if (ref_contact_states[i]) {
-            enable_ee.push_back(i);
-            hrp::JointPath jp(m_robot->rootLink(), m_robot->link(stikp[i].target_name));
+    std::string ee_name[2] = {"rleg", "lleg"};
+    for (size_t i = 0; i < 2; i++) {
+        if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+            enable_ee.push_back(support_ee_index_map[ee_name[i]]);
+            hrp::JointPath jp(m_robot->rootLink(), m_robot->link(see[support_ee_index_map[ee_name[i]]].target_name));
             for (size_t j =0; j < jp.numJoints(); j++) {
                 enable_joint.push_back(jp.joint(j)->jointId);
             }
@@ -2936,13 +2992,13 @@ void Stabilizer::torqueST()
     size_t k = 0;
     size_t l = 0;
     distributeForce(f_ga, tau_ga, enable_ee, enable_joint, ee_force);
-    for (size_t i = 0; i < act_ee_p.size(); i++) {
-        enable_ee2.push_back(i);
-        hrp::JointPath jp(m_robot->rootLink(), m_robot->link(stikp[i].target_name));
+    for (size_t i = 0; i < 2; i++) {
+        enable_ee2.push_back(support_ee_index_map[ee_name[i]]);
+        hrp::JointPath jp(m_robot->rootLink(), m_robot->link(see[support_ee_index_map[ee_name[i]]].target_name));
         for (size_t j =0; j < jp.numJoints(); j++) {
             enable_joint2.push_back(jp.joint(j)->jointId);
         }
-        if (ref_contact_states[i]) {
+        if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
             ee_force2.push_back(ee_force[k]);
             k++;
         } else {
@@ -3020,10 +3076,10 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     //calc Gc
     hrp::dmatrix Gc(6, state_dim);
     for (size_t i = 0; i < ee_num; i++) {
-        Gc.block(0, i * 6, 3, 3) = act_ee_R[enable_ee[i]];
-        Gc.block(3, i * 6, 3, 3) = hrp::hat(act_ee_p[enable_ee[i]]  - act_cog) * act_ee_R[enable_ee[i]];
+        Gc.block(0, i * 6, 3, 3) = act_see_R[enable_ee[i]];
+        Gc.block(3, i * 6, 3, 3) = hrp::hat(act_see_p[enable_ee[i]]  - act_cog) * act_see_R[enable_ee[i]];
         Gc.block(0, i * 6 + 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
-        Gc.block(3, i * 6 + 3, 3, 3) = act_ee_R[enable_ee[i]];
+        Gc.block(3, i * 6 + 3, 3, 3) = act_see_R[enable_ee[i]];
     }
     hrp::Vector3 foot_origin_pos;
     hrp::Matrix33 foot_origin_rot;
@@ -3211,14 +3267,29 @@ size_t Stabilizer::makeTauzConstraint(const std::vector<int>& enable_ee, double 
     const_matrix = hrp::dmatrix::Zero(2 * ee_num, 6 * ee_num);
     for (size_t i = 0; i < ee_num; i++){
         double x1, x2, y1, y2;
-        x1 = szd->get_leg_front_margin();
-        x2 = szd->get_leg_rear_margin();
-        if (stikp[enable_ee[i]].ee_name == "rleg") {
-            y1 = szd->get_leg_inside_margin();
-            y2 = szd->get_leg_outside_margin();
-        } else {
-            y1 = szd->get_leg_outside_margin();
-            y2 = szd->get_leg_outside_margin();
+        if (see[enable_ee[i]].support_front_margin > 0 &&
+            see[enable_ee[i]].support_rear_margin > 0 &&
+            see[enable_ee[i]].support_left_margin > 0 &&
+            see[enable_ee[i]].support_right_margin > 0) {
+            x1 = see[enable_ee[i]].support_front_margin;
+            x2 = see[enable_ee[i]].support_rear_margin;
+            y1 = see[enable_ee[i]].support_left_margin;
+            y2 = see[enable_ee[i]].support_right_margin;
+        } else { //use zmp support margin
+            x1 = szd->get_leg_front_margin();
+            x2 = szd->get_leg_rear_margin();
+            if (see[enable_ee[i]].ee_name == "rleg") {
+                y1 = szd->get_leg_inside_margin();
+                y2 = szd->get_leg_outside_margin();
+            } else if (see[enable_ee[i]].ee_name == "lleg") {
+                y1 = szd->get_leg_outside_margin();
+                y2 = szd->get_leg_outside_margin();
+            } else {
+                const_matrix = hrp::dmatrix::Zero(0, 0);
+                upper_limit = hrp::dvector::Ones(0);
+                lower_limit = hrp::dvector::Zero(0);
+                return 0;
+            }
         }
         const_matrix.block(i * 2, i * 6, 2, 6)
             << 0.5*(y1-y2), 0.5*(x2-x1), 0.5*coef*(x1+x2+y1+y2), 0, 0,  1,
@@ -3236,14 +3307,29 @@ size_t Stabilizer::makeTauz2Constraint(const std::vector<int>& enable_ee, double
     for (size_t i = 0; i < ee_num; i++){
         double x1, x2, y1, y2, x, y, x_, y_;
         hrp::dmatrix convert_matrix = hrp::dmatrix::Identity(6, 6);
-        x1 = szd->get_leg_front_margin();
-        x2 = szd->get_leg_rear_margin();
-        if (stikp[enable_ee[i]].ee_name == "rleg") {
-            y1 = szd->get_leg_inside_margin();
-            y2 = szd->get_leg_outside_margin();
-        } else {
-            y1 = szd->get_leg_outside_margin();
-            y2 = szd->get_leg_outside_margin();
+        if (see[enable_ee[i]].support_front_margin > 0 &&
+            see[enable_ee[i]].support_rear_margin > 0 &&
+            see[enable_ee[i]].support_left_margin > 0 &&
+            see[enable_ee[i]].support_right_margin > 0) {
+            x1 = see[enable_ee[i]].support_front_margin;
+            x2 = see[enable_ee[i]].support_rear_margin;
+            y1 = see[enable_ee[i]].support_left_margin;
+            y2 = see[enable_ee[i]].support_right_margin;
+        } else { //use zmp support margin
+            x1 = szd->get_leg_front_margin();
+            x2 = szd->get_leg_rear_margin();
+            if (see[enable_ee[i]].ee_name == "rleg") {
+                y1 = szd->get_leg_inside_margin();
+                y2 = szd->get_leg_outside_margin();
+            } else if (see[enable_ee[i]].ee_name == "lleg") {
+                y1 = szd->get_leg_outside_margin();
+                y2 = szd->get_leg_outside_margin();
+            } else {
+                const_matrix = hrp::dmatrix::Zero(0, 0);
+                upper_limit = hrp::dvector::Ones(0);
+                lower_limit = hrp::dvector::Zero(0);
+                return 0;
+            }
         }
         x = (x1 + x2) / 2;
         y = (y1 + y2) / 2;
@@ -3355,12 +3441,12 @@ void Stabilizer::calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>&
     size_t ee_num = enable_ee.size();
     ret = hrp::dmatrix(3, 6 * ee_num);
     for (size_t i = 0; i < ee_num; i++) {
-        hrp::Link* target = m_robot->link(stikp[enable_ee[i]].target_name);
+        hrp::Link* target = m_robot->link(see[enable_ee[i]].target_name);
         //world frame
         hrp::dmatrix tmpR(6, 6);
-        hrp::Vector3 tmpp = target->p + target->R * stikp[enable_ee[i]].localp;
-        tmpR << target->R * stikp[enable_ee[i]].localR, hrp::dmatrix::Zero(3, 3),
-            hrp::dmatrix::Zero(3, 3), target->R * stikp[enable_ee[i]].localR;
+        hrp::Vector3 tmpp = target->p + target->R * see[enable_ee[i]].localp;
+        tmpR << target->R * see[enable_ee[i]].localR, hrp::dmatrix::Zero(3, 3),
+            hrp::dmatrix::Zero(3, 3), target->R * see[enable_ee[i]].localR;
         ret.block(0, i * 6, 2, 6) <<
             -(tmpp(2) - zmp_z), 0, tmpp(0), 0, -1, 0,
             0, -(tmpp(2) - zmp_z), tmpp(1), 1,  0, 0;
@@ -3382,7 +3468,7 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
 
     for (size_t i = 0; i < ee_num; i++) {
         //Jacobian
-        hrp::Link* target = m_robot->link(stikp[enable_ee[i]].target_name);
+        hrp::Link* target = m_robot->link(see[enable_ee[i]].target_name);
         hrp::JointPath jp(m_robot->rootLink(), target);
         hrp::dmatrix JJ;
         jp.calcJacobian(JJ);
@@ -3390,12 +3476,12 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
         hrp::dmatrix rotate = hrp::dmatrix::Zero(6, 6);
         rotate.block(0, 0, 3, 3) = hrp::dmatrix::Identity(3, 3);
         rotate.block(3, 3, 3, 3) = hrp::dmatrix::Identity(3, 3);
-        rotate.block(0, 3, 3, 3) = -hrp::hat(target->R * stikp[enable_ee[i]].localp);
+        rotate.block(0, 3, 3, 3) = -hrp::hat(target->R * see[enable_ee[i]].localp);
         JJ = rotate * JJ;
         //convert to end effector frame
         rotate = hrp::dmatrix::Zero(6, 6);
-        rotate.block(0, 0, 3, 3) = (target->R * stikp[enable_ee[i]].localR).transpose();
-        rotate.block(3, 3, 3, 3) = (target->R * stikp[enable_ee[i]].localR).transpose();
+        rotate.block(0, 0, 3, 3) = (target->R * see[enable_ee[i]].localR).transpose();
+        rotate.block(3, 3, 3, 3) = (target->R * see[enable_ee[i]].localR).transpose();
         JJ = rotate * JJ;
         for (size_t j = 0; j < jp.numJoints(); j++) {
             for (size_t k = 0; k < enable_joint.size(); k++) {

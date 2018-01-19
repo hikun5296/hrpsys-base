@@ -290,6 +290,15 @@ class Stabilizer
     double avoid_gain, reference_gain, max_limb_length, limb_length_margin;
     size_t ik_loop_count;
   };
+  // Support End Effector Parameters
+  struct SEEParam {
+    std::string target_name; // Name of end link
+    std::string ee_name; // Name of ee (e.g., rleg, lleg, ...)
+    std::string parent_name; // Name of parent ling in the limb
+    hrp::Vector3 localp; // Position of ee in end link frame (^{l}p_e = R_l^T (p_e - p_l))
+    hrp::Matrix33 localR; // Rotation of ee in end link frame (^{l}R_e = R_l^T R_e)
+    double support_front_margin, support_rear_margin, support_left_margin, support_right_margin;
+  };
   enum cmode {MODE_IDLE, MODE_AIR, MODE_ST, MODE_SYNC_TO_IDLE, MODE_SYNC_TO_AIR} control_mode;
   // members
   std::map<std::string, hrp::VirtualForceSensorParam> m_vfs;
@@ -299,7 +308,9 @@ class Stabilizer
   unsigned int m_debugLevel;
   hrp::dvector transition_joint_q, qorg, qrefv, qold;
   std::vector<STIKParam> stikp;
+  std::vector<SEEParam> see;
   std::map<std::string, size_t> contact_states_index_map;
+  std::map<std::string, size_t> support_ee_index_map;
   std::vector<bool> ref_contact_states, prev_ref_contact_states, act_contact_states, is_ik_enable, is_feedback_control_enable, is_zmp_calc_enable;
   std::vector<double> toeheel_ratio;
   double dt;
@@ -313,8 +324,10 @@ class Stabilizer
   hrp::Matrix33 current_root_R, target_root_R, prev_act_foot_origin_rot, prev_ref_foot_origin_rot, target_foot_origin_rot, ref_foot_origin_rot;
   std::vector <hrp::Vector3> target_ee_p, rel_ee_pos, act_ee_p, projected_normal, act_force, ref_force, ref_moment;
   std::vector <hrp::Vector3> ref_ee_p, ref_ee_vel, prev_ref_ee_p, act_ee_vel, prev_act_ee_p, act_ee_omega;
+  std::vector <hrp::Vector3> act_see_p;
   std::vector <hrp::Matrix33> ref_ee_R, prev_act_ee_R;
   std::vector <hrp::Matrix33> target_ee_R, rel_ee_rot, act_ee_R;
+  std::vector <hrp::Matrix33> act_see_R;
   std::vector<std::string> rel_ee_name;
   rats::coordinates target_foot_midcoords;
   hrp::Vector3 ref_zmp, ref_cog, ref_cp, ref_cogvel, rel_ref_cp, prev_ref_cog, prev_ref_zmp;
