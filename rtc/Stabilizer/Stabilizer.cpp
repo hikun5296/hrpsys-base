@@ -3202,13 +3202,6 @@ size_t Stabilizer::makeFrictionConstraint(const std::vector<int>& enable_ee, dou
             -1, 0, coef, 0, 0, 0,
             0,  1, coef, 0, 0, 0,
             0, -1, coef, 0, 0, 0;
-        hrp::dmatrix convert_matrix = hrp::dmatrix::Identity(6, 6);
-        convert_matrix.block(3, 0, 3, 3) = - hrp::hat(stikp[enable_ee[i]].localp);
-        hrp::dmatrix tmpR = hrp::dmatrix::Zero(6, 6);
-        tmpR.block(0, 0, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        tmpR.block(3, 3, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        convert_matrix = tmpR * convert_matrix;
-        const_matrix.block(i * 4, i * 6, 4, 6) = const_matrix.block(i * 4, i * 6, 4, 6) * convert_matrix;
     }
     upper_limit = hrp::dvector::Ones(4 * ee_num) * 1e10;
     lower_limit = hrp::dvector::Zero(4 * ee_num);
@@ -3233,13 +3226,6 @@ size_t Stabilizer::makeTauzConstraint(const std::vector<int>& enable_ee, double 
         const_matrix.block(i * 2, i * 6, 2, 6)
             << 0.5*(y1-y2), 0.5*(x2-x1), 0.5*coef*(x1+x2+y1+y2), 0, 0,  1,
             0.5*(y2-y1), 0.5*(x1-x2), 0.5*coef*(x1+x2+y1+y2), 0, 0, -1;
-        hrp::dmatrix convert_matrix = hrp::dmatrix::Identity(6, 6);
-        convert_matrix.block(3, 0, 3, 3) = - hrp::hat(stikp[enable_ee[i]].localp);
-        hrp::dmatrix tmpR = hrp::dmatrix::Zero(6, 6);
-        tmpR.block(0, 0, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        tmpR.block(3, 3, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        convert_matrix = tmpR * convert_matrix;
-        const_matrix.block(i * 2, i * 6, 2, 6) = const_matrix.block(i * 2, i * 6, 2, 6) * convert_matrix;
     }
     upper_limit = hrp::dvector::Ones(2 * ee_num) * 1e10;
     lower_limit = hrp::dvector::Zero(2 * ee_num);
@@ -3279,13 +3265,6 @@ size_t Stabilizer::makeTauz2Constraint(const std::vector<int>& enable_ee, double
             0, 0, x_,
             y_, -x_, 0;
         const_matrix.block(i * 8, i * 6, 8, 6) = const_matrix.block(i * 8, i * 6, 8, 6) * convert_matrix;
-        convert_matrix = hrp::dmatrix::Identity(6, 6);
-        convert_matrix.block(3, 0, 3, 3) = - hrp::hat(stikp[enable_ee[i]].localp);
-        hrp::dmatrix tmpR = hrp::dmatrix::Zero(6, 6);
-        tmpR.block(0, 0, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        tmpR.block(3, 3, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        convert_matrix = tmpR * convert_matrix;
-        const_matrix.block(i * 8, i * 6, 8, 6) = const_matrix.block(i * 8, i * 6, 8, 6) * convert_matrix;
     }
     upper_limit = hrp::dvector::Ones(8 * ee_num) * 1e10;
     lower_limit = hrp::dvector::Zero(8 * ee_num);
@@ -3310,43 +3289,57 @@ void Stabilizer::makeJointTorqueLimit(size_t num, const std::vector<int>& enable
 size_t Stabilizer::makeCopConstraint(const std::vector<int>& enable_ee, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit)
 {
     size_t ee_num = enable_ee.size();
+    std::vector<std::vector<Eigen::Vector2d> > tmp;
     std::vector<std::vector<Eigen::Vector2d> > support_polygon_vertices;
-    szd->get_vertices(support_polygon_vertices);
+    szd->get_vertices(tmp);
     size_t const_dim = 0;
     for (size_t i = 0; i < ee_num; i++) {
-        const_dim += support_polygon_vertices[enable_ee[i]].size();
+        if (see[enable_ee[i]].support_front_margin > 0 &&
+            see[enable_ee[i]].support_rear_margin > 0 &&
+            see[enable_ee[i]].support_left_margin > 0 &&
+            see[enable_ee[i]].support_right_margin > 0) {
+            std::vector<Eigen::Vector2d> vecs;
+            Eigen::Vector2d vec;
+            vec << see[enable_ee[i]].support_front_margin, see[enable_ee[i]].support_left_margin;
+            vecs.push_back(vec);
+            vec << see[enable_ee[i]].support_front_margin, -see[enable_ee[i]].support_right_margin;
+            vecs.push_back(vec);
+            vec << -see[enable_ee[i]].support_rear_margin, -see[enable_ee[i]].support_right_margin;
+            vecs.push_back(vec);
+            vec << -see[enable_ee[i]].support_rear_margin, see[enable_ee[i]].support_left_margin;
+            vecs.push_back(vec);
+            const_dim += vecs.size();
+            support_polygon_vertices.push_back(vecs);
+        } else { //use zmp param
+            const_dim += tmp[enable_ee[i]].size();
+            support_polygon_vertices.push_back(tmp[enable_ee[i]]);
+        }
     }
     const_matrix = hrp::dmatrix::Zero(const_dim, 6 * ee_num);
     size_t index = 0;
 
     for (size_t i = 0; i < ee_num; i++) {
-        size_t ver_num = support_polygon_vertices[enable_ee[i]].size();
+        size_t ver_num = support_polygon_vertices[i].size();
         //calc matrix to check if zmp is inside support polygon
         hrp::dmatrix check_matrix(ver_num, 3);
         for (size_t j = 0; j < ver_num - 1; j++) {
             check_matrix.block(j, 0, 1, 3) <<
-                support_polygon_vertices[enable_ee[i]][j+1](1) - support_polygon_vertices[enable_ee[i]][j](1),
-                support_polygon_vertices[enable_ee[i]][j](0) - support_polygon_vertices[enable_ee[i]][j+1](0),
-                support_polygon_vertices[enable_ee[i]][j+1](0) * support_polygon_vertices[enable_ee[i]][j](1)
-                - support_polygon_vertices[enable_ee[i]][j+1](1) * support_polygon_vertices[enable_ee[i]][j](0);
+                support_polygon_vertices[i][j+1](1) - support_polygon_vertices[i][j](1),
+                support_polygon_vertices[i][j](0) - support_polygon_vertices[i][j+1](0),
+                support_polygon_vertices[i][j+1](0) * support_polygon_vertices[i][j](1)
+                - support_polygon_vertices[i][j+1](1) * support_polygon_vertices[i][j](0);
         }
         check_matrix.block(ver_num-1, 0, 1, 3) <<
-            support_polygon_vertices[enable_ee[i]].front()(1) - support_polygon_vertices[enable_ee[i]].back()(1),
-            support_polygon_vertices[enable_ee[i]].back()(0) - support_polygon_vertices[enable_ee[i]].front()(0),
-            support_polygon_vertices[enable_ee[i]].front()(0) * support_polygon_vertices[enable_ee[i]].back()(1)
-            - support_polygon_vertices[enable_ee[i]].front()(1) * support_polygon_vertices[enable_ee[i]].back()(0);
+            support_polygon_vertices[i].front()(1) - support_polygon_vertices[i].back()(1),
+            support_polygon_vertices[i].back()(0) - support_polygon_vertices[i].front()(0),
+            support_polygon_vertices[i].front()(0) * support_polygon_vertices[i].back()(1)
+            - support_polygon_vertices[i].front()(1) * support_polygon_vertices[i].back()(0);
         //calc COP matrix
         hrp::dmatrix cop_num_den(3, 6);
-        hrp::Link* target = m_robot->link(stikp[enable_ee[i]].target_name);
-        hrp::Vector3 tp = - stikp[enable_ee[i]].localR.transpose() * stikp[enable_ee[i]].localp;
         cop_num_den <<
-            -tp(2), 0, tp(0), 0, -1, 0,
-            0, -tp(2), tp(1), 1,  0, 0,
-            0, 0, 1, 0, 0, 0;
-        hrp::dmatrix tmpR = hrp::dmatrix::Zero(6, 6);
-        tmpR.block(0, 0, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        tmpR.block(3, 3, 3, 3) = stikp[enable_ee[i]].localR.transpose();
-        cop_num_den = cop_num_den * tmpR;
+            0, 0, 0, 0, -1, 0,
+            0, 0, 0, 1,  0, 0,
+            0, 0, 1, 0,  0, 0;
         const_matrix.block(index, 6 * i, ver_num, 6) = check_matrix * cop_num_den;
         index += ver_num;
     }
@@ -3366,11 +3359,14 @@ void Stabilizer::calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>&
     ret = hrp::dmatrix(3, 6 * ee_num);
     for (size_t i = 0; i < ee_num; i++) {
         hrp::Link* target = m_robot->link(stikp[enable_ee[i]].target_name);
+        //world frame
         hrp::dmatrix tmpR(6, 6);
-        tmpR << target->R, hrp::dmatrix::Zero(3, 3), hrp::dmatrix::Zero(3, 3), target->R;
+        hrp::Vector3 tmpp = target->p + target->R * stikp[enable_ee[i]].localp;
+        tmpR << target->R * stikp[enable_ee[i]].localR, hrp::dmatrix::Zero(3, 3),
+            hrp::dmatrix::Zero(3, 3), target->R * stikp[enable_ee[i]].localR;
         ret.block(0, i * 6, 2, 6) <<
-            -(target->p(2) - zmp_z), 0, target->p(0), 0, -1, 0,
-            0, -(target->p(2) - zmp_z), target->p(1), 1,  0, 0;
+            -(tmpp(2) - zmp_z), 0, tmpp(0), 0, -1, 0,
+            0, -(tmpp(2) - zmp_z), tmpp(1), 1,  0, 0;
         ret.block(2, i * 6, 1, 6) <<
             0, 0, 1, 0, 0, 0;
         ret.block(0, i * 6, 3, 6) = ret.block(0, i * 6, 3, 6) * tmpR;
@@ -3393,10 +3389,16 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
         hrp::JointPath jp(m_robot->rootLink(), target);
         hrp::dmatrix JJ;
         jp.calcJacobian(JJ);
-        //convert to end link frame
+        //convert to end effector Jacobian (world frame)
         hrp::dmatrix rotate = hrp::dmatrix::Zero(6, 6);
-        rotate.block(0, 0, 3, 3) = target->R.transpose();
-        rotate.block(3, 3, 3, 3) = target->R.transpose();
+        rotate.block(0, 0, 3, 3) = hrp::dmatrix::Identity(3, 3);
+        rotate.block(3, 3, 3, 3) = hrp::dmatrix::Identity(3, 3);
+        rotate.block(0, 3, 3, 3) = -hrp::hat(target->R * stikp[enable_ee[i]].localp);
+        JJ = rotate * JJ;
+        //convert to end effector frame
+        rotate = hrp::dmatrix::Zero(6, 6);
+        rotate.block(0, 0, 3, 3) = (target->R * stikp[enable_ee[i]].localR).transpose();
+        rotate.block(3, 3, 3, 3) = (target->R * stikp[enable_ee[i]].localR).transpose();
         JJ = rotate * JJ;
         for (size_t j = 0; j < jp.numJoints(); j++) {
             for (size_t k = 0; k < enable_joint.size(); k++) {
@@ -3408,11 +3410,12 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
         }
 
         //CM jacobian
-        //convert to end link frame
+        //convert to end effector frame
+        CMJ_tmp = rotate * CMJ_tmp;
         for (size_t j = 0; j < m_robot->numJoints(); j++) {
             for (size_t k = 0; k < enable_joint.size(); k++) {
                 if (enable_joint[k] == j) {
-                    CMJ.block(i * 6, k, 3, 1) = target->R.transpose() * CMJ_tmp.col(j);
+                    CMJ.block(i * 6, k, 3, 1) = CMJ_tmp.col(j);
                     break;
                 }
             }
