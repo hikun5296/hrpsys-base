@@ -141,17 +141,17 @@ class Stabilizer
   hrp::Vector3 vlimit(const hrp::Vector3& value, double llimit_value, double ulimit_value);
   hrp::Vector3 vlimit(const hrp::Vector3& value, const hrp::Vector3& limit_value);
   hrp::Vector3 vlimit(const hrp::Vector3& value, const hrp::Vector3& llimit_value, const hrp::Vector3& ulimit_value);
-  void calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint);
+  void calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee);
   size_t makeFrictionConstraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   size_t makeTauzConstraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   size_t makeTauz2Constraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
-  void makeJointTorqueLimit(size_t num, const std::vector<int>& enable_joint, double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit);
+  void makeJointTorqueLimit(double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   size_t makeCopConstraint(const std::vector<int>& enable_ee, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
-  void distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint, std::vector<hrp::dvector6>& ee_force);
+  void distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, std::vector<hrp::dvector6>& ee_force);
   void generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_foot, hrp::Vector3& tau_foot, size_t i);
   void generateForce(const hrp::Matrix33& foot_origin_rot, const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_ga, hrp::Vector3& tau_ga);
   void calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const double zmp_z);
-  void calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint);
+  void calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee);
   void torqueST();
 
   inline bool isContact (const size_t idx) // 0 = right, 1 = left

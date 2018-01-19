@@ -2946,19 +2946,12 @@ void Stabilizer::torqueST()
     hrp::Vector3 f_ga, tau_ga;
     std::vector<hrp::dvector6> ee_force, ee_force2;
     std::vector<int> enable_ee, enable_ee2;
-    std::vector<int> enable_joint, enable_joint2;
     std::string ee_name[2] = {"rleg", "lleg"};
     for (size_t i = 0; i < 2; i++) {
         if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
             enable_ee.push_back(support_ee_index_map[ee_name[i]]);
-            hrp::JointPath jp(m_robot->rootLink(), m_robot->link(see[support_ee_index_map[ee_name[i]]].target_name));
-            for (size_t j =0; j < jp.numJoints(); j++) {
-                enable_joint.push_back(jp.joint(j)->jointId);
-            }
         }
     }
-    std::sort(enable_joint.begin(), enable_joint.end());
-    enable_joint.erase(std::unique(enable_joint.begin(), enable_joint.end()), enable_joint.end());
     hrp::Matrix33 Kpp = hrp::Matrix33::Identity() * 450;
     Kpp(2, 2) *= 2;
     hrp::Matrix33 Kpd = ((Kpp.array() * 2 * m_robot->totalMass()).sqrt() * 1.6).matrix();
@@ -2991,13 +2984,9 @@ void Stabilizer::torqueST()
     }
     size_t k = 0;
     size_t l = 0;
-    distributeForce(f_ga, tau_ga, enable_ee, enable_joint, ee_force);
+    distributeForce(f_ga, tau_ga, enable_ee, ee_force);
     for (size_t i = 0; i < 2; i++) {
         enable_ee2.push_back(support_ee_index_map[ee_name[i]]);
-        hrp::JointPath jp(m_robot->rootLink(), m_robot->link(see[support_ee_index_map[ee_name[i]]].target_name));
-        for (size_t j =0; j < jp.numJoints(); j++) {
-            enable_joint2.push_back(jp.joint(j)->jointId);
-        }
         if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
             ee_force2.push_back(ee_force[k]);
             k++;
@@ -3006,9 +2995,7 @@ void Stabilizer::torqueST()
             l++;
         }
     }
-    std::sort(enable_joint2.begin(), enable_joint2.end());
-    enable_joint2.erase(std::unique(enable_joint2.begin(), enable_joint2.end()), enable_joint2.end());
-    calcForceMapping(ee_force2, enable_ee2, enable_joint2);
+    calcForceMapping(ee_force2, enable_ee2);
 
     for ( int i = 0; i < m_robot->numJoints(); i++ ){
         m_robot->joint(i)->q = qrefv[i];
@@ -3065,7 +3052,7 @@ void Stabilizer::generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Mat
     tau_foot = 2 * (d * hrp::Matrix33::Identity() + hrp::hat(e)) * Krp * e + Krd * act_ee_omega[i];
 }
 
-void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint, std::vector<hrp::dvector6>& ee_force)
+void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee,  std::vector<hrp::dvector6>& ee_force)
 {
     hrp::dvector6 f_tau;
     f_tau << f_ga, tau_ga;
@@ -3096,13 +3083,13 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
 
     //joint torque constraint
     hrp::dmatrix ef2tau;
-    calcEforce2TauMatrix(ef2tau, enable_ee, enable_joint);
-    size_t tau_dim = enable_joint.size();
+    calcEforce2TauMatrix(ef2tau, enable_ee);
+    size_t tau_dim = m_robot->numJoints();
     hrp::dvector upperTauLimit;
     hrp::dvector lowerTauLimit;
     double pgain[] = {3300, 8300, 3300, 3300, 4700, 3300, 3300, 8300, 3300, 3300, 4700, 3300};
     double dgain[] = {24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24};
-    makeJointTorqueLimit(tau_dim, enable_joint, pgain, dgain, upperTauLimit, lowerTauLimit);
+    makeJointTorqueLimit(pgain, dgain, upperTauLimit, lowerTauLimit);
 
     //friction constraint
     hrp::dmatrix friction;
@@ -3354,16 +3341,16 @@ size_t Stabilizer::makeTauz2Constraint(const std::vector<int>& enable_ee, double
     return 8 * ee_num;
 }
 
-void Stabilizer::makeJointTorqueLimit(size_t num, const std::vector<int>& enable_joint, double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit)
+void Stabilizer::makeJointTorqueLimit(double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit)
 {
-    upper_limit = hrp::dvector(num);
-    lower_limit = hrp::dvector(num);
-    for (size_t i = 0; i < num; i++) {
-        double tlimit = m_robot->joint(enable_joint[i])->climit * m_robot->joint(enable_joint[i])->gearRatio * m_robot->joint(enable_joint[i])->torqueConst;
-        double ulimit = -pgain[enable_joint[i]] * (m_robot->joint(enable_joint[i])->q - m_robot->joint(enable_joint[i])->ulimit)
-            -dgain[enable_joint[i]] * m_robot->joint(enable_joint[i])->dq;
-        double llimit = -pgain[enable_joint[i]] * (m_robot->joint(enable_joint[i])->q - m_robot->joint(enable_joint[i])->llimit)
-            -dgain[enable_joint[i]] * m_robot->joint(enable_joint[i])->dq;
+    upper_limit = hrp::dvector(m_robot->numJoints());
+    lower_limit = hrp::dvector(m_robot->numJoints());
+    for (size_t i = 0; i < m_robot->numJoints(); i++) {
+        double tlimit = m_robot->joint(i)->climit * m_robot->joint(i)->gearRatio * m_robot->joint(i)->torqueConst;
+        double ulimit = -pgain[i] * (m_robot->joint(i)->q - m_robot->joint(i)->ulimit)
+            -dgain[i] * m_robot->joint(i)->dq;
+        double llimit = -pgain[i] * (m_robot->joint(i)->q - m_robot->joint(i)->llimit)
+            -dgain[i] * m_robot->joint(i)->dq;
         upper_limit(i) =  std::max(std::min(tlimit, ulimit), -tlimit);
         lower_limit(i) =  std::min(std::max(-tlimit, llimit), tlimit);
     }
@@ -3456,12 +3443,11 @@ void Stabilizer::calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>&
     }
 }
 
-void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint)
+void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee)
 {
     size_t ee_num = enable_ee.size();
-    size_t joint_num = enable_joint.size();
-    hrp::dmatrix J = hrp::dmatrix::Zero(6 * ee_num, joint_num);
-    hrp::dmatrix CMJ = hrp::dmatrix::Zero(6 * ee_num, joint_num);
+    hrp::dmatrix J = hrp::dmatrix::Zero(6 * ee_num, m_robot->numJoints());
+    hrp::dmatrix CMJ = hrp::dmatrix::Zero(6 * ee_num, m_robot->numJoints());
     hrp::dmatrix CMJ_tmp;
     m_robot->calcCM();
     m_robot->calcCMJacobian(NULL, CMJ_tmp);
@@ -3484,25 +3470,13 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
         rotate.block(3, 3, 3, 3) = (target->R * see[enable_ee[i]].localR).transpose();
         JJ = rotate * JJ;
         for (size_t j = 0; j < jp.numJoints(); j++) {
-            for (size_t k = 0; k < enable_joint.size(); k++) {
-                if (enable_joint[k] == jp.joint(j)->jointId) {
-                    J.block(i * 6, k, 6, 1) = JJ.col(j);
-                    break;
-                }
-            }
+            J.block(i * 6, jp.joint(j)->jointId, 6, 1) = JJ.col(j);
         }
 
         //CM jacobian
         //convert to end effector frame
         CMJ_tmp = rotate * CMJ_tmp;
-        for (size_t j = 0; j < m_robot->numJoints(); j++) {
-            for (size_t k = 0; k < enable_joint.size(); k++) {
-                if (enable_joint[k] == j) {
-                    CMJ.block(i * 6, k, 3, 1) = CMJ_tmp.col(j);
-                    break;
-                }
-            }
-        }
+        CMJ.block(i * 6, 0, 6, m_robot->numJoints()) = CMJ_tmp;
     }
     hrp::dmatrix H = hrp::dmatrix::Zero(6 * ee_num, 6 * ee_num);
     for (size_t i = 0; i < ee_num; i++) {
@@ -3515,7 +3489,7 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
     ret = CMJ.transpose() * H - J.transpose();
 }
 
-void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint)
+void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee)
 {
     size_t ee_num = ee_force.size();
     hrp::dvector total_ee_force(6 * ee_num);
@@ -3523,16 +3497,10 @@ void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, con
         total_ee_force.block(i * 6, 0, 6, 1) = ee_force[i];
     }
     hrp::dmatrix mat;
-    calcEforce2TauMatrix(mat, enable_ee, enable_joint);
+    calcEforce2TauMatrix(mat, enable_ee);
     hrp::dvector joint_torques = mat * total_ee_force;
     for (size_t j = 0; j < m_robot->numJoints(); j++) {
-        m_robot->joint(j)->u = 0;
-        for (size_t k = 0; k < enable_joint.size(); k++) {
-            if (enable_joint[k] == j) {
-                m_robot->joint(j)->u = joint_torques(k);
-                break;
-            }
-        }
+        m_robot->joint(j)->u = joint_torques(j);
     }
     if (DEBUGP) {
         std::cerr << "[" << m_profile.instance_name << "] torque ref" << std::endl;
