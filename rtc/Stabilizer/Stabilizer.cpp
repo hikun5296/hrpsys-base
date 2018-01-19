@@ -307,16 +307,14 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
       target_ee_R.push_back(hrp::Matrix33::Identity());
       act_ee_p.push_back(hrp::Vector3::Zero());
       act_ee_R.push_back(hrp::Matrix33::Identity());
-      ref_el_p.push_back(hrp::Vector3::Zero());
-      ref_el_vel.push_back(hrp::Vector3::Zero());
-      prev_ref_el_p.push_back(hrp::Vector3::Zero());
-      act_el_p.push_back(hrp::Vector3::Zero());
-      act_el_vel.push_back(hrp::Vector3::Zero());
-      prev_act_el_p.push_back(hrp::Vector3::Zero());
-      act_el_omega.push_back(hrp::Vector3::Zero());
-      ref_el_R.push_back(hrp::Matrix33::Identity());
-      act_el_R.push_back(hrp::Matrix33::Identity());
-      prev_act_el_R.push_back(hrp::Matrix33::Identity());
+      act_ee_vel.push_back(hrp::Vector3::Zero());
+      act_ee_omega.push_back(hrp::Vector3::Zero());
+      prev_act_ee_p.push_back(hrp::Vector3::Zero());
+      prev_act_ee_R.push_back(hrp::Matrix33::Identity());
+      ref_ee_p.push_back(hrp::Vector3::Zero());
+      ref_ee_R.push_back(hrp::Matrix33::Identity());
+      ref_ee_vel.push_back(hrp::Vector3::Zero());
+      prev_ref_ee_p.push_back(hrp::Vector3::Zero());
       projected_normal.push_back(hrp::Vector3::Zero());
       act_force.push_back(hrp::Vector3::Zero());
       ref_force.push_back(hrp::Vector3::Zero());
@@ -482,8 +480,8 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   act_cogvel_filter = boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero())); // [Hz]
   act_base_omega_filter = boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero())); // [Hz]
   for (size_t i = 0; i < stikp.size(); i++) {
-      act_el_vel_filter.push_back(boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero()))); // [Hz]
-      act_el_omega_filter.push_back(boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero()))); // [Hz]
+      act_ee_vel_filter.push_back(boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero()))); // [Hz]
+      act_ee_omega_filter.push_back(boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> >(new FirstOrderLowPassFilter<hrp::Vector3>(4.0, dt, hrp::Vector3::Zero()))); // [Hz]
   }
 
   // for debug output
@@ -890,22 +888,20 @@ void Stabilizer::getActualParameters ()
       hrp::Vector3 _act_ee_p = target->p + target->R * stikp[i].localp;
       act_ee_p[i] = foot_origin_rot.transpose() * (_act_ee_p - foot_origin_pos);
       act_ee_R[i] = foot_origin_rot.transpose() * (target->R * stikp[i].localR);
-      act_el_p[i] = foot_origin_rot.transpose() * (target->p - foot_origin_pos);
-      act_el_R[i] = foot_origin_rot.transpose() * target->R;
       if (ref_contact_states != prev_ref_contact_states) {
-          act_el_vel[i] = (foot_origin_rot.transpose() * prev_act_foot_origin_rot) * act_el_vel[i];
+          act_ee_vel[i] = (foot_origin_rot.transpose() * prev_act_foot_origin_rot) * act_ee_vel[i];
       } else {
-          act_el_vel[i] = (act_el_p[i] - prev_act_el_p[i]) / dt;
+          act_ee_vel[i] = (act_ee_p[i] - prev_act_ee_p[i]) / dt;
       }
-      act_el_vel[i] = act_el_vel_filter[i]->passFilter(act_el_vel[i]);
-      prev_act_el_p[i] = act_el_p[i];
-      hrp::Matrix33 act_el_R_vel = (act_el_R[i] - prev_act_el_R[i]) / dt;
-      omega_mat = act_el_R_vel * act_el_R[i].transpose();
-      act_el_omega[i](0) = (omega_mat(2,1) - omega_mat(1,2)) / 2;
-      act_el_omega[i](1) = (omega_mat(0,2) - omega_mat(2,0)) / 2;
-      act_el_omega[i](2) = (omega_mat(1,0) - omega_mat(0,1)) / 2;
-      act_el_omega[i] = act_el_omega_filter[i]->passFilter(act_el_omega[i]);
-      prev_act_el_R[i] = act_el_R[i];
+      act_ee_vel[i] = act_ee_vel_filter[i]->passFilter(act_ee_vel[i]);
+      prev_act_ee_p[i] = act_ee_p[i];
+      hrp::Matrix33 act_ee_R_vel = (act_ee_R[i] - prev_act_ee_R[i]) / dt;
+      omega_mat = act_ee_R_vel * act_ee_R[i].transpose();
+      act_ee_omega[i](0) = (omega_mat(2,1) - omega_mat(1,2)) / 2;
+      act_ee_omega[i](1) = (omega_mat(0,2) - omega_mat(2,0)) / 2;
+      act_ee_omega[i](2) = (omega_mat(1,0) - omega_mat(0,1)) / 2;
+      act_ee_omega[i] = act_ee_omega_filter[i]->passFilter(act_ee_omega[i]);
+      prev_act_ee_R[i] = act_ee_R[i];
     }
     prev_act_foot_origin_rot = foot_origin_rot;
     // capture point
@@ -1293,14 +1289,15 @@ void Stabilizer::getTargetParameters ()
     ref_total_moment = foot_origin_rot.transpose() * ref_total_moment;
     for (size_t i = 0; i < stikp.size(); i++) {
       hrp::Link* target = m_robot->link(stikp[i].target_name);
-      ref_el_p[i] = foot_origin_rot.transpose() * (target->p - foot_origin_pos);
+      hrp::Vector3 _ref_ee_p = target->p + target->R * stikp[i].localp;
+      ref_ee_p[i] = foot_origin_rot.transpose() * (_ref_ee_p - foot_origin_pos);
       if (ref_contact_states != prev_ref_contact_states) {
-        ref_el_vel[i] = (foot_origin_rot.transpose() * prev_ref_foot_origin_rot) * ref_el_vel[i];
+        ref_ee_vel[i] = (foot_origin_rot.transpose() * prev_ref_foot_origin_rot) * ref_ee_vel[i];
       } else {
-        ref_el_vel[i] = (ref_el_p[i] - prev_ref_el_p[i]) / dt;
+        ref_ee_vel[i] = (ref_ee_p[i] - prev_ref_ee_p[i]) / dt;
       }
-      prev_ref_el_p[i] = ref_el_p[i];
-      ref_el_R[i] = foot_origin_rot.transpose() * target->R;
+      prev_ref_ee_p[i] = ref_ee_p[i];
+      ref_ee_R[i] = foot_origin_rot.transpose() * target->R * stikp[i].localR;
     }
     prev_ref_foot_origin_rot = foot_origin_rot;
     target_foot_origin_rot = foot_origin_rot;
@@ -2895,7 +2892,7 @@ void Stabilizer::torqueST()
     std::vector<hrp::dvector6> ee_force, ee_force2;
     std::vector<int> enable_ee, enable_ee2;
     std::vector<int> enable_joint, enable_joint2;
-    for (size_t i = 0; i < act_el_p.size(); i++) {
+    for (size_t i = 0; i < act_ee_p.size(); i++) {
         if (ref_contact_states[i]) {
             enable_ee.push_back(i);
             hrp::JointPath jp(m_robot->rootLink(), m_robot->link(stikp[i].target_name));
@@ -2921,14 +2918,14 @@ void Stabilizer::torqueST()
     Kpd = hrp::Matrix33::Identity() * 50;
     Krp = hrp::Matrix33::Identity() * 100;
     Krd = hrp::Matrix33::Identity() * 10;
-    for (size_t i = 0; i < act_el_p.size(); i++) {
+    for (size_t i = 0; i < act_ee_p.size(); i++) {
         if (!ref_contact_states[i]) {
             Gc1.push_back(hrp::dmatrix::Zero(3, 6));
             Gc2.push_back(hrp::dmatrix::Zero(3, 6));
-            Gc1.back().block(0, 0, 3, 3) = act_el_R[i];
-            Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_el_p[i] - act_cog) * act_ee_R[i];
+            Gc1.back().block(0, 0, 3, 3) = act_ee_R[i];
+            Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_ee_p[i] - act_cog) * act_ee_R[i];
             Gc1.back().block(0, 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
-            Gc2.back().block(0, 3, 3, 3) = act_el_R[i];
+            Gc2.back().block(0, 3, 3, 3) = act_ee_R[i];
             generateSwingFootForce(Kpp, Kpd, Krp, Krd, f_foot, tau_foot, i);
             tmp_f.push_back(hrp::dvector6::Zero());
             tmp_f.back() << f_foot, tau_foot;
@@ -2939,7 +2936,7 @@ void Stabilizer::torqueST()
     size_t k = 0;
     size_t l = 0;
     distributeForce(f_ga, tau_ga, enable_ee, enable_joint, ee_force);
-    for (size_t i = 0; i < act_el_p.size(); i++) {
+    for (size_t i = 0; i < act_ee_p.size(); i++) {
         enable_ee2.push_back(i);
         hrp::JointPath jp(m_robot->rootLink(), m_robot->link(stikp[i].target_name));
         for (size_t j =0; j < jp.numJoints(); j++) {
@@ -3005,11 +3002,11 @@ void Stabilizer::generateForce(const hrp::Matrix33& foot_origin_rot, const hrp::
 
 void Stabilizer::generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_foot, hrp::Vector3& tau_foot, size_t i)
 {
-    f_foot = act_el_R[i].transpose() * Kpp * (act_el_p[i] - ref_el_p[i]) + act_el_R[i].transpose() * Kpd * (act_el_vel[i] - ref_el_vel[i]);
-    Eigen::Quaternion<double> q(ref_el_R[i].transpose() * act_el_R[i]);
+    f_foot = act_ee_R[i].transpose() * Kpp * (act_ee_p[i] - ref_ee_p[i]) + act_ee_R[i].transpose() * Kpd * (act_ee_vel[i] - ref_ee_vel[i]);
+    Eigen::Quaternion<double> q(ref_ee_R[i].transpose() * act_ee_R[i]);
     hrp::Vector3 e = q.vec();
     double d = q.w();
-    tau_foot = 2 * (d * hrp::Matrix33::Identity() + hrp::hat(e)) * Krp * e + Krd * act_el_omega[i];
+    tau_foot = 2 * (d * hrp::Matrix33::Identity() + hrp::hat(e)) * Krp * e + Krd * act_ee_omega[i];
 }
 
 void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, const std::vector<int>& enable_joint, std::vector<hrp::dvector6>& ee_force)
@@ -3023,10 +3020,10 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     //calc Gc
     hrp::dmatrix Gc(6, state_dim);
     for (size_t i = 0; i < ee_num; i++) {
-        Gc.block(0, i * 6, 3, 3) = act_el_R[enable_ee[i]];
-        Gc.block(3, i * 6, 3, 3) = hrp::hat(act_el_p[enable_ee[i]]  - act_cog) * act_el_R[enable_ee[i]];
+        Gc.block(0, i * 6, 3, 3) = act_ee_R[enable_ee[i]];
+        Gc.block(3, i * 6, 3, 3) = hrp::hat(act_ee_p[enable_ee[i]]  - act_cog) * act_ee_R[enable_ee[i]];
         Gc.block(0, i * 6 + 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
-        Gc.block(3, i * 6 + 3, 3, 3) = act_el_R[enable_ee[i]];
+        Gc.block(3, i * 6 + 3, 3, 3) = act_ee_R[enable_ee[i]];
     }
     hrp::Vector3 foot_origin_pos;
     hrp::Matrix33 foot_origin_rot;

@@ -312,8 +312,8 @@ class Stabilizer
   hrp::Vector3 current_root_p, target_root_p;
   hrp::Matrix33 current_root_R, target_root_R, prev_act_foot_origin_rot, prev_ref_foot_origin_rot, target_foot_origin_rot, ref_foot_origin_rot;
   std::vector <hrp::Vector3> target_ee_p, rel_ee_pos, act_ee_p, projected_normal, act_force, ref_force, ref_moment;
-  std::vector <hrp::Vector3> ref_el_p, ref_el_vel, prev_ref_el_p, act_el_p, act_el_vel, prev_act_el_p, act_el_omega;
-  std::vector <hrp::Matrix33> ref_el_R, act_el_R, prev_act_el_R;
+  std::vector <hrp::Vector3> ref_ee_p, ref_ee_vel, prev_ref_ee_p, act_ee_vel, prev_act_ee_p, act_ee_omega;
+  std::vector <hrp::Matrix33> ref_ee_R, prev_act_ee_R;
   std::vector <hrp::Matrix33> target_ee_R, rel_ee_rot, act_ee_R;
   std::vector<std::string> rel_ee_name;
   rats::coordinates target_foot_midcoords;
@@ -324,7 +324,7 @@ class Stabilizer
   std::vector<double> prev_act_force_z;
   double zmp_origin_off, transition_smooth_gain, d_pos_z_root, limb_stretch_avoidance_time_const, limb_stretch_avoidance_vlimit[2], root_rot_compensation_limit[2];
   boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > act_cogvel_filter, act_base_omega_filter;
-  std::vector<boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > > act_el_vel_filter, act_el_omega_filter;
+  std::vector<boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > > act_ee_vel_filter, act_ee_omega_filter;
   OpenHRP::StabilizerService::STAlgorithm st_algorithm;
   SimpleZMPDistributor* szd;
   std::vector<std::vector<Eigen::Vector2d> > support_polygon_vetices, margined_support_polygon_vetices;
