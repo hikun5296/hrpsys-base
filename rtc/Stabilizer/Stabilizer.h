@@ -147,7 +147,7 @@ class Stabilizer
   size_t makeTauz2Constraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   void makeJointTorqueLimit(double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   size_t makeCopConstraint(const std::vector<int>& enable_ee, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
-  bool distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, std::vector<hrp::dvector6>& ee_force, int solver_id);
+  bool distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, std::vector<hrp::dvector6>& ee_force, int solver_id, const std::vector<hrp::dvector6>& ee_force_limit);
   void generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_foot, hrp::Vector3& tau_foot, size_t i);
   void generateForce(const hrp::Matrix33& foot_origin_rot, const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_ga, hrp::Vector3& tau_ga);
   void calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const double zmp_z);
@@ -343,6 +343,7 @@ class Stabilizer
   hrp::Matrix33 act_base_R, prev_act_base_R;
   hrp::Vector3 foot_origin_offset[2];
   std::vector<double> prev_act_force_z;
+  std::vector<int> torque_st_counter, torque_st_mode;
   double zmp_origin_off, transition_smooth_gain, d_pos_z_root, limb_stretch_avoidance_time_const, limb_stretch_avoidance_vlimit[2], root_rot_compensation_limit[2];
   boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > act_cogvel_filter, act_base_omega_filter;
   std::vector<boost::shared_ptr<FirstOrderLowPassFilter<hrp::Vector3> > > act_ee_vel_filter, act_ee_omega_filter;

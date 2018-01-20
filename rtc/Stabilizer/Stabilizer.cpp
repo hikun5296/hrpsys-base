@@ -335,6 +335,8 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
       std::cerr << "[" << m_profile.instance_name << "]   target = " << m_robot->link(ikp.target_name)->name << ", base = " << ee_base << ", sensor_name = " << ikp.sensor_name << std::endl;
       std::cerr << "[" << m_profile.instance_name << "]   offset_pos = " << ikp.localp.format(Eigen::IOFormat(Eigen::StreamPrecision, 0, ", ", ", ", "", "", "    [", "]")) << "[m]" << std::endl;
       prev_act_force_z.push_back(0.0);
+      torque_st_counter.push_back(0);
+      torque_st_mode.push_back(0);
     }
     m_contactStates.data.length(num);
     m_toeheelRatio.data.length(num);
@@ -699,7 +701,11 @@ RTC::ReturnCode_t Stabilizer::onExecute(RTC::UniqueId ec_id)
     getCurrentParameters();
     getTargetParameters();
     getActualParameters();
+    //struct timeval s, e;
+    //gettimeofday(&s, NULL);
     torqueST();
+    //gettimeofday(&e, NULL);
+    //std::cout << e.tv_usec-s.tv_usec << std::endl;
     calcStateForEmergencySignal();
     switch (control_mode) {
     case MODE_IDLE:
@@ -960,6 +966,14 @@ void Stabilizer::getActualParameters ()
           act_ee_vel[i] = (foot_origin_rot.transpose() * prev_act_foot_origin_rot) * act_ee_vel[i];
       } else {
           act_ee_vel[i] = (act_ee_p[i] - prev_act_ee_p[i]) / dt;
+      }
+      if (!ref_contact_states[i] && prev_ref_contact_states[i]) {
+          torque_st_counter[i] = 200;
+          torque_st_mode[i] = -1;
+      }
+      if (ref_contact_states[i] && !prev_ref_contact_states[i]) {
+          torque_st_counter[i] = 0;
+          torque_st_mode[i] = 1;
       }
       act_ee_vel[i] = act_ee_vel_filter[i]->passFilter(act_ee_vel[i]);
       prev_act_ee_p[i] = act_ee_p[i];
@@ -1402,6 +1416,11 @@ bool Stabilizer::calcZMP(hrp::Vector3& ret_zmp, const double zmp_z)
     rats::rotm3times(tmpR, sensor->link->R, sensor->localR);
     hrp::Vector3 nf = tmpR * hrp::Vector3(m_wrenches[i].data[0], m_wrenches[i].data[1], m_wrenches[i].data[2]);
     hrp::Vector3 nm = tmpR * hrp::Vector3(m_wrenches[i].data[3], m_wrenches[i].data[4], m_wrenches[i].data[5]);
+    /*if(i == 0){
+        std::cout << "rff" << hrp::Vector3(m_wrenches[i].data[0], m_wrenches[i].data[1], m_wrenches[i].data[2]).transpose() << std::endl;
+        std::cout << "rft" << hrp::Vector3(m_wrenches[i].data[3], m_wrenches[i].data[4], m_wrenches[i].data[5]).transpose() << std::endl;
+        std::cout << "sensor" << sensor->localR << std::endl;
+        }*/
     tmpzmpx += nf(2) * fsp(0) - (fsp(2) - zmp_z) * nf(0) - nm(1);
     tmpzmpy += nf(2) * fsp(1) - (fsp(2) - zmp_z) * nf(1) + nm(0);
     tmpfz += nf(2);
@@ -2967,27 +2986,58 @@ void Stabilizer::torqueST()
         hrp::Vector3 f_ga, tau_ga;
         std::vector<hrp::dvector6> ee_force;
         std::vector<int> enable_ee;
+        std::vector<hrp::dvector6> ee_force_limit;
         std::string ee_name[2] = {"rleg", "lleg"};
         for (size_t i = 0; i < 2; i++) {
             if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
                 enable_ee.push_back(support_ee_index_map[ee_name[i]]);
             }
+            if (torque_st_mode[i]) {
+                hrp::dvector6 tmp = hrp::dvector6::Zero();
+                tmp(2) = torque_st_counter[i]*2.5;
+                tmp(5) = torque_st_counter[i]*2.5;
+                ee_force_limit.push_back(tmp);
+            } else {
+                ee_force_limit.push_back(1e10*hrp::dvector6::Ones());
+            }
         }
         hrp::Matrix33 Kpp = hrp::Matrix33::Identity() * 450;
-        Kpp(2, 2) *= 2;
+        //Kpp(0, 0) *= 1; //20170711 歩行video撮影時のparam
+        //Kpp(1, 1) *= 1;
+        //Kpp(2, 2) *= 5;
+
+        //Kpp(0, 0) *= 4;
+        // Kpp(1, 1) *= 4;
+        //Kpp(2, 2) *= 4;
+        //Kpp(0, 0) *= 0.1;
+        //Kpp(1, 1) *= 0.1;
+
+        Kpp(0, 0) *= 6;
+        Kpp(1, 1) *= 2;
+        Kpp(2, 2) *= 15;
         hrp::Matrix33 Kpd = ((Kpp.array() * 2 * m_robot->totalMass()).sqrt() * 1.6).matrix();
         hrp::Matrix33 Krp = hrp::Matrix33::Identity() * 500;
         hrp::Matrix33 Krd = hrp::Matrix33::Identity() * 50;
+        Krp(0, 0) *= 2;
+        Krd(0, 0) *= 2;
+        Krp(1, 1) *= 2;
+        Krd(1, 1) *= 2;
+        Krp(2, 2) *= 0.5;
+        Krd(2, 2) *= 0.5;
+        //Krp(2, 2) = 50;
+        //Krd(2, 2) = 5;
         generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
         std::vector<hrp::dmatrix> Gc1;
         std::vector<hrp::dmatrix> Gc2;
         std::vector<hrp::dvector6> tmp_f1, tmp_f2;
         hrp::Vector3 f_foot = hrp::Vector3::Zero();
         hrp::Vector3 tau_foot = hrp::Vector3::Zero();
-        Kpp = hrp::Matrix33::Identity() * 500;
-        Kpd = hrp::Matrix33::Identity() * 50;
-        Krp = hrp::Matrix33::Identity() * 100;
-        Krd = hrp::Matrix33::Identity() * 10;
+        Kpp = hrp::Matrix33::Identity() * 500 * 5;
+        Kpd = hrp::Matrix33::Identity() * 50 * 10;
+        Kpp(2, 2) = 1;
+        Kpd(2, 2) = 0.1;
+        Krp = hrp::Matrix33::Identity() * 100 *0.1;
+        Krd = hrp::Matrix33::Identity() * 10 *0.2;
         for (size_t i = 0; i < 2; i++) {
             if (!ref_contact_states[contact_states_index_map[ee_name[i]]]) {
                 Gc1.push_back(hrp::dmatrix::Zero(3, 6));
@@ -3005,11 +3055,11 @@ void Stabilizer::torqueST()
         }
         size_t k = 0;
         size_t l = 0;
-        distributeForce(f_ga, tau_ga, enable_ee, tmp_f2, 0);
+        distributeForce(f_ga, tau_ga, enable_ee, tmp_f2, 0, ee_force_limit);
         enable_ee.clear();
         for (size_t i = 0; i < 2; i++) {
             enable_ee.push_back(support_ee_index_map[ee_name[i]]);
-            if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+            if (ref_contact_states[contact_states_index_map[ee_name[i]]] || torque_st_mode[i]) {
                 ee_force.push_back(tmp_f2[k]);
                 k++;
             } else {
@@ -3026,6 +3076,22 @@ void Stabilizer::torqueST()
             m_allEEWrench.data[i * 6 + 4] = ee_force[i](4);
             m_allEEWrench.data[i * 6 + 5] = ee_force[i](5);
         }
+        for (int i = 0; i < act_ee_p.size(); i++) {
+            if (torque_st_mode[i] == 1) {
+                if (torque_st_counter[i] == 200) {
+                    torque_st_mode[i] = 0;
+                } else {
+                    torque_st_counter[i]++;
+                }
+            }
+            if (torque_st_mode[i] == -1) {
+                if (torque_st_counter[i] == 0) {
+                    torque_st_mode[i] = 0;
+                } else {
+                    torque_st_counter[i]--;
+                }
+            }
+        }
     }
     if (true) {
         hrp::Vector3 f_ga, tau_ga;
@@ -3037,17 +3103,38 @@ void Stabilizer::torqueST()
         hrp::Matrix33 Kpd = hrp::Matrix33::Zero();
         hrp::Matrix33 Krp = hrp::Matrix33::Identity() * 500;
         hrp::Matrix33 Krd = hrp::Matrix33::Identity() * 50;
+        //hrp::Matrix33 Krp = hrp::Matrix33::Zero();
+        //hrp::Matrix33 Krd = hrp::Matrix33::Zero();
         generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
-        distributeForce(f_ga, tau_ga, enable_ee, ee_force, 1);
+        std::vector<hrp::dvector6> ee_force_limit;
+        for (size_t i = 0; i < enable_ee.size(); i++) {
+            ee_force_limit.push_back(1e10*hrp::dvector6::Ones());
+        }
+        distributeForce(f_ga, tau_ga, enable_ee, ee_force, 1, ee_force_limit);
         calcForceMapping(ee_force, enable_ee, joint_torques2);
+        joint_torques2(2) = tau_ga(0) * 0.5;
+        joint_torques2(8) = tau_ga(0) * 0.5;
+        joint_torques2(0) = 0;
+        joint_torques2(6) = 0;
+        if (DEBUGP) {
+            std::cerr << "[" << m_profile.instance_name << "] torque ref" << std::endl;
+            std::cerr << "[" << m_profile.instance_name << "]    "
+                      << joint_torques2.transpose() << std::endl;
+        }
     }
-    int count_max = 500;
+    int count_max = 2000;
     switch (support_mode) {
     case MODE_NORMAL:
         joint_torques = joint_torques1;
         break;
     case MODE_SUPPORT:
         joint_torques = joint_torques2;
+        joint_torques(3) = 0;
+        joint_torques(4) = 0;
+        joint_torques(5) = 0;
+        joint_torques(9) = 0;
+        joint_torques(10) = 0;
+        joint_torques(11) = 0;
         break;
     case MODE_SYNC_TO_NORMAL:
         joint_torques = (joint_torques1 * support_transition_count
@@ -3060,8 +3147,18 @@ void Stabilizer::torqueST()
         }
         break;
     case MODE_SYNC_TO_SUPPORT:
-        joint_torques = (joint_torques2 * support_transition_count
-                         + joint_torques1 * (count_max - support_transition_count)) / count_max;
+        if (support_transition_count < count_max / 2) {
+            joint_torques = (joint_torques2 * support_transition_count
+                             + joint_torques1 * (count_max / 2 - support_transition_count)) / (count_max / 2);
+        } else {
+            joint_torques = joint_torques2;
+            joint_torques(3) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+            joint_torques(4) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+            joint_torques(5) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+            joint_torques(9) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+            joint_torques(10) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+            joint_torques(11) = joint_torques2(3) * (count_max - support_transition_count) / (count_max / 2);
+        }
         if (support_transition_count == count_max) {
             support_transition_count = 0;
             support_mode = MODE_SUPPORT;
@@ -3072,6 +3169,12 @@ void Stabilizer::torqueST()
     }
     for ( int i = 0; i < m_robot->numJoints(); i++){
         m_robot->joint(i)->u = joint_torques(i);
+    }
+    if (m_qCurrent.data[5] > 0.7853981634 || m_qCurrent.data[5] < -0.7853981634) {
+        m_robot->joint(5)->u = 0;
+    }
+    if (m_qCurrent.data[11] > 0.7853981634 || m_qCurrent.data[11] < -0.7853981634) {
+        m_robot->joint(11)->u = 0;
     }
 
     for ( int i = 0; i < m_robot->numJoints(); i++ ){
@@ -3135,13 +3238,16 @@ void Stabilizer::generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Mat
     tau_foot = 2 * (d * hrp::Matrix33::Identity() + hrp::hat(e)) * Krp * e + Krd * act_ee_omega[i];
 }
 
-bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee,  std::vector<hrp::dvector6>& ee_force, int solver_id)
+bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee,  std::vector<hrp::dvector6>& ee_force, int solver_id, const std::vector<hrp::dvector6>& ee_force_limit)
 {
     hrp::dvector6 f_tau;
     f_tau << f_ga, tau_ga;
     size_t ee_num = enable_ee.size();
     size_t state_dim = 6 * ee_num;
     double a = 100, b = 100, c = 0.000001;
+    if (solver_id == 1) {
+        a = 0.01;
+    }
 
     //calc Gc
     hrp::dmatrix Gc(6, state_dim);
@@ -3178,7 +3284,11 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     hrp::dmatrix friction;
     hrp::dvector upperFrictionLimit;
     hrp::dvector lowerFrictionLimit;
-    size_t friction_dim = makeFrictionConstraint(enable_ee, 0.3, friction, upperFrictionLimit, lowerFrictionLimit);
+    double coef = 0.9;
+    if (solver_id == 1) {
+        coef = 2;
+    }
+    size_t friction_dim = makeFrictionConstraint(enable_ee, coef, friction, upperFrictionLimit, lowerFrictionLimit);
 
     //cop constraint
     hrp::dmatrix cop;
@@ -3190,7 +3300,7 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     hrp::dmatrix tauz;
     hrp::dvector upperTauzLimit;
     hrp::dvector lowerTauzLimit;
-    size_t tauz_dim = makeTauz2Constraint(enable_ee, 0.9, tauz, upperTauzLimit, lowerTauzLimit);
+    size_t tauz_dim = makeTauz2Constraint(enable_ee, coef, tauz, upperTauzLimit, lowerTauzLimit);
 
     size_t const_dim = tau_dim + friction_dim + cop_dim + tauz_dim;
     Eigen::Matrix<double, -1, -1, Eigen::RowMajor> Const(const_dim, state_dim);
@@ -3200,23 +3310,28 @@ bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     upperConstLimit << upperTauLimit, upperFrictionLimit, upperCopLimit, upperTauzLimit;
     lowerConstLimit << lowerTauLimit, lowerFrictionLimit, lowerCopLimit, lowerTauzLimit;
 
-    Eigen::Matrix<double, -1, -1, Eigen::RowMajor> Q = Gc.transpose() * I1 * Gc + I2 + 50 * Gc2.transpose() * Gc2;
+    Eigen::Matrix<double, -1, -1, Eigen::RowMajor> Q;
+    if (solver_id == 0) {
+      Q = Gc.transpose() * I1 * Gc + I2 + 50 * Gc2.transpose() * Gc2;
+    } else {
+      Q = Gc.transpose() * I1 * Gc + I2;
+    }
     Eigen::Matrix<double, -1, -1, Eigen::RowMajor> C = -Gc.transpose() * I1 * f_tau;
     hrp::dmatrix upperStateLimit(6, ee_num);
     hrp::dmatrix lowerStateLimit(6, ee_num);
     for (size_t i = 0; i < ee_num; i++) {
-        upperStateLimit(0, i) =  1e10;
-        upperStateLimit(1, i) =  1e10;
-        upperStateLimit(2, i) =  1e10;
-        upperStateLimit(3, i) =  1e10;
-        upperStateLimit(4, i) =  1e10;
-        upperStateLimit(5, i) =  1e10;
-        lowerStateLimit(0, i) = -1e10;
-        lowerStateLimit(1, i) = -1e10;
-        lowerStateLimit(2, i) =    0;
-        lowerStateLimit(3, i) = -1e10;
-        lowerStateLimit(4, i) = -1e10;
-        lowerStateLimit(5, i) = -1e10;
+        upperStateLimit(0, i) =  ee_force_limit[i](0);
+        upperStateLimit(1, i) =  ee_force_limit[i](1);
+        upperStateLimit(2, i) =  ee_force_limit[i](2);
+        upperStateLimit(3, i) =  ee_force_limit[i](3);
+        upperStateLimit(4, i) =  ee_force_limit[i](4);
+        upperStateLimit(5, i) =  ee_force_limit[i](5);
+        lowerStateLimit(0, i) = -ee_force_limit[i](0);
+        lowerStateLimit(1, i) = -ee_force_limit[i](1);
+        lowerStateLimit(2, i) = 0;
+        lowerStateLimit(3, i) = -ee_force_limit[i](3);
+        lowerStateLimit(4, i) = -ee_force_limit[i](4);
+        lowerStateLimit(5, i) = -ee_force_limit[i](5);
     }
     hrp::dmatrix output(6, ee_num);
 
@@ -3439,6 +3554,11 @@ void Stabilizer::makeJointTorqueLimit(double pgain[], double dgain[], hrp::dvect
         upper_limit(i) =  std::max(std::min(tlimit, ulimit), -tlimit);
         lower_limit(i) =  std::min(std::max(-tlimit, llimit), tlimit);
     }
+    //hip yaw
+    //upper_limit(0) = 5;
+    //upper_limit(6) = 5;
+    //lower_limit(0) = -5;
+    //lower_limit(6) = -5;
 }
 
 size_t Stabilizer::makeCopConstraint(const std::vector<int>& enable_ee, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit)

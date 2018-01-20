@@ -196,6 +196,7 @@ public:
        \param o_forces array of force/torque(length = 6)[N, Nm]
     */
     void readForceSensor(unsigned int i_rank, double *o_forces);
+    void readAttitudeSensor(unsigned int i_rank, double *o_attitude);
 
     /**
        \brief write array of reference angles of joint servo

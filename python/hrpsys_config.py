@@ -912,6 +912,8 @@ class HrpsysConfigurator(object):
         if self.el != None:
             self.connectLoggerPort(self.el, 'q')
         if self.rh != None:
+            self.connectLoggerPort(self.rh, 'flooracc')
+            self.connectLoggerPort(self.rh, 'switch')
             self.connectLoggerPort(self.rh, 'emergencySignal',
                                    'emergencySignal')
             self.connectLoggerPort(self.rh, 'servoState')

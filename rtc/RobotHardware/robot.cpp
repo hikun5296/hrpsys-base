@@ -483,6 +483,11 @@ void robot::readForceSensor(unsigned int i_rank, double *o_forces)
     read_force_sensor(i_rank, o_forces);
 }
 
+void robot::readAttitudeSensor(unsigned int i_rank, double *o_attitude)
+{
+    read_attitude_sensor(i_rank, o_attitude);
+}
+
 void robot::writeJointCommands(const double *i_commands)
 {
     if (!m_commandOld.size()) {

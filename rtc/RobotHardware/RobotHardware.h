@@ -169,6 +169,8 @@ class RobotHardware
   OpenHRP::TimedLongSeqSeq m_servoState;
   TimedLong m_emergencySignal;
   OpenHRP::RobotHardwareService::TimedRobotState2 m_rstate2;
+  TimedDoubleSeq m_flooracc;
+  TimedDoubleSeq m_switch;
 
   // DataOutPort declaration
   // <rtc-template block="outport_declare">
@@ -182,6 +184,8 @@ class RobotHardware
   OutPort<OpenHRP::TimedLongSeqSeq> m_servoStateOut;
   OutPort<TimedLong> m_emergencySignalOut;
   OutPort<OpenHRP::RobotHardwareService::TimedRobotState2> m_rstate2Out;
+  OutPort<TimedDoubleSeq> m_flooraccOut;
+  OutPort<TimedDoubleSeq> m_switchOut;
 
   // </rtc-template>
 

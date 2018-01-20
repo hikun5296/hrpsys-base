@@ -57,6 +57,8 @@ RobotHardware::RobotHardware(RTC::Manager* manager)
     m_servoStateOut("servoState", m_servoState),
     m_emergencySignalOut("emergencySignal", m_emergencySignal),
     m_rstate2Out("rstate2", m_rstate2),
+    m_flooraccOut("flooracc", m_flooracc),
+    m_switchOut("switch", m_switch),
     m_RobotHardwareServicePort("RobotHardwareService"),
     // </rtc-template>
 	dummy(0)
@@ -84,6 +86,8 @@ RTC::ReturnCode_t RobotHardware::onInitialize()
   addOutPort("servoState", m_servoStateOut);
   addOutPort("emergencySignal", m_emergencySignalOut);
   addOutPort("rstate2", m_rstate2Out);
+  addOutPort("flooracc", m_flooraccOut);
+  addOutPort("switch", m_switchOut);
 
   // Set service provider to Ports
     m_RobotHardwareServicePort.registerProvider("service0", "RobotHardwareService", m_service0);
@@ -139,6 +143,9 @@ RTC::ReturnCode_t RobotHardware::onInitialize()
   m_qRef.data.length(m_robot->numJoints());
   m_dqRef.data.length(m_robot->numJoints());
   m_tauRef.data.length(m_robot->numJoints());
+
+  m_flooracc.data.length(3);
+  m_switch.data.length(1);
 
   int ngyro = m_robot->numSensors(Sensor::RATE_GYRO);
   std::cout << "the number of gyros = " << ngyro << std::endl;
@@ -301,6 +308,10 @@ RTC::ReturnCode_t RobotHardware::onExecute(RTC::UniqueId ec_id)
       m_robot->readForceSensor(i, m_force[i].data.get_buffer());
       m_force[i].tm = tm;
   }
+  m_robot->readAttitudeSensor(0, m_flooracc.data.get_buffer());
+  m_robot->readAttitudeSensor(1, m_switch.data.get_buffer());
+  m_flooracc.tm = tm;
+  m_switch.tm = tm;
   
   for (unsigned int i=0; i<m_servoState.data.length(); i++){
       size_t len = m_robot->lengthOfExtraServoState(i)+1;
@@ -341,6 +352,8 @@ RTC::ReturnCode_t RobotHardware::onExecute(RTC::UniqueId ec_id)
       m_forceOut[i]->write();
   }
   m_rstate2Out.write();
+  m_flooraccOut.write();
+  m_switchOut.write();
 
   return RTC::RTC_OK;
 }
