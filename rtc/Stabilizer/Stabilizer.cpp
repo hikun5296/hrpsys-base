@@ -2997,7 +2997,11 @@ void Stabilizer::torqueST()
             l++;
         }
     }
-    calcForceMapping(ee_force, enable_ee);
+    hrp::dvector joint_torques;
+    calcForceMapping(ee_force, enable_ee, joint_torques);
+    for ( int i = 0; i < m_robot->numJoints(); i++){
+        m_robot->joint(i)->u = joint_torques(i);
+    }
 
     for ( int i = 0; i < m_robot->numJoints(); i++ ){
         m_robot->joint(i)->q = qrefv[i];
@@ -3485,7 +3489,7 @@ void Stabilizer::calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>&
     ret = CMJ.transpose() * H - J.transpose();
 }
 
-void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, const std::vector<int>& enable_ee)
+void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6>& ee_force, const std::vector<int>& enable_ee, hrp::dvector& joint_torques)
 {
     size_t ee_num = ee_force.size();
     hrp::dvector total_ee_force(6 * ee_num);
@@ -3494,10 +3498,7 @@ void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6> ee_force, con
     }
     hrp::dmatrix mat;
     calcEforce2TauMatrix(mat, enable_ee);
-    hrp::dvector joint_torques = mat * total_ee_force;
-    for (size_t j = 0; j < m_robot->numJoints(); j++) {
-        m_robot->joint(j)->u = joint_torques(j);
-    }
+    joint_torques = mat * total_ee_force;
     if (DEBUGP) {
         std::cerr << "[" << m_profile.instance_name << "] torque ref" << std::endl;
         std::cerr << "[" << m_profile.instance_name << "]    "
