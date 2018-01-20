@@ -153,6 +153,7 @@ class Stabilizer
   void calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const double zmp_z);
   void calcEforce2TauMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee);
   void torqueST();
+  void changeSupportMode(bool flag);
 
   inline bool isContact (const size_t idx) // 0 = right, 1 = left
   {
@@ -300,6 +301,7 @@ class Stabilizer
     double support_front_margin, support_rear_margin, support_left_margin, support_right_margin;
   };
   enum cmode {MODE_IDLE, MODE_AIR, MODE_ST, MODE_SYNC_TO_IDLE, MODE_SYNC_TO_AIR} control_mode;
+  enum smode {MODE_NORMAL, MODE_SUPPORT, MODE_SYNC_TO_NORMAL, MODE_SYNC_TO_SUPPORT} support_mode;
   // members
   std::map<std::string, hrp::VirtualForceSensorParam> m_vfs;
   std::vector<hrp::JointPathExPtr> jpe_v;

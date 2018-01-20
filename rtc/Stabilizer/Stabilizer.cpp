@@ -99,6 +99,7 @@ Stabilizer::Stabilizer(RTC::Manager* manager)
     m_allEECompOut("allEEComp", m_allEEComp),
     m_debugDataOut("debugData", m_debugData),
     control_mode(MODE_IDLE),
+    support_mode(MODE_NORMAL),
     st_algorithm(OpenHRP::StabilizerService::TPCC),
     emergency_check_mode(OpenHRP::StabilizerService::NO_CHECK),
     szd(NULL),
@@ -3503,6 +3504,18 @@ void Stabilizer::calcForceMapping(const std::vector<hrp::dvector6>& ee_force, co
         std::cerr << "[" << m_profile.instance_name << "] torque ref" << std::endl;
         std::cerr << "[" << m_profile.instance_name << "]    "
                   << joint_torques.transpose() << std::endl;
+    }
+}
+
+void Stabilizer::changeSupportMode(bool flag) {
+    if (flag) {
+        if (support_mode == MODE_NORMAL) {
+            support_mode = MODE_SYNC_TO_SUPPORT;
+        }
+    } else {
+        if (support_mode == MODE_SUPPORT) {
+            support_mode = MODE_SYNC_TO_NORMAL;
+        }
     }
 }
 
