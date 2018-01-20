@@ -366,6 +366,7 @@ class Stabilizer
   std::vector<double> cp_check_margin, tilt_margin;
   OpenHRP::StabilizerService::EmergencyCheckMode emergency_check_mode;
   std::vector<qpOASES::SQProblem> qp_solver;
+  int support_transition_count;
 };
 
 

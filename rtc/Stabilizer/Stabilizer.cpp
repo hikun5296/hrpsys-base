@@ -505,6 +505,7 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   qrefv.resize(m_robot->numJoints());
   qold.resize(m_robot->numJoints());
   transition_count = 0;
+  support_transition_count = 0;
   loop = 0;
   m_is_falling_counter = 0;
   is_air_counter = 0;
@@ -2945,61 +2946,106 @@ void Stabilizer::torqueST()
     m_robot->calcForwardKinematics();
     calcFootOriginCoords (foot_origin_pos, foot_origin_rot);
 
-    hrp::Vector3 f_ga, tau_ga;
-    std::vector<hrp::dvector6> ee_force;
-    std::vector<int> enable_ee;
-    std::string ee_name[2] = {"rleg", "lleg"};
-    for (size_t i = 0; i < 2; i++) {
-        if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+    hrp::dvector joint_torques1, joint_torques2, joint_torques;
+    if (true) {
+        hrp::Vector3 f_ga, tau_ga;
+        std::vector<hrp::dvector6> ee_force;
+        std::vector<int> enable_ee;
+        std::string ee_name[2] = {"rleg", "lleg"};
+        for (size_t i = 0; i < 2; i++) {
+            if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+                enable_ee.push_back(support_ee_index_map[ee_name[i]]);
+            }
+        }
+        hrp::Matrix33 Kpp = hrp::Matrix33::Identity() * 450;
+        Kpp(2, 2) *= 2;
+        hrp::Matrix33 Kpd = ((Kpp.array() * 2 * m_robot->totalMass()).sqrt() * 1.6).matrix();
+        hrp::Matrix33 Krp = hrp::Matrix33::Identity() * 500;
+        hrp::Matrix33 Krd = hrp::Matrix33::Identity() * 50;
+        generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
+        std::vector<hrp::dmatrix> Gc1;
+        std::vector<hrp::dmatrix> Gc2;
+        std::vector<hrp::dvector6> tmp_f1, tmp_f2;
+        hrp::Vector3 f_foot = hrp::Vector3::Zero();
+        hrp::Vector3 tau_foot = hrp::Vector3::Zero();
+        Kpp = hrp::Matrix33::Identity() * 500;
+        Kpd = hrp::Matrix33::Identity() * 50;
+        Krp = hrp::Matrix33::Identity() * 100;
+        Krd = hrp::Matrix33::Identity() * 10;
+        for (size_t i = 0; i < 2; i++) {
+            if (!ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+                Gc1.push_back(hrp::dmatrix::Zero(3, 6));
+                Gc2.push_back(hrp::dmatrix::Zero(3, 6));
+                Gc1.back().block(0, 0, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
+                Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_ee_p[contact_states_index_map[ee_name[i]]] - act_cog) * act_ee_R[contact_states_index_map[ee_name[i]]];
+                Gc1.back().block(0, 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
+                Gc2.back().block(0, 3, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
+                generateSwingFootForce(Kpp, Kpd, Krp, Krd, f_foot, tau_foot, contact_states_index_map[ee_name[i]]);
+                tmp_f1.push_back(hrp::dvector6::Zero());
+                tmp_f1.back() << f_foot, tau_foot;
+                f_ga -= Gc1.back() * tmp_f1.back();
+                tau_ga -= Gc2.back() * tmp_f1.back();
+            }
+        }
+        size_t k = 0;
+        size_t l = 0;
+        distributeForce(f_ga, tau_ga, enable_ee, tmp_f2, 0);
+        enable_ee.clear();
+        for (size_t i = 0; i < 2; i++) {
             enable_ee.push_back(support_ee_index_map[ee_name[i]]);
+            if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
+                ee_force.push_back(tmp_f2[k]);
+                k++;
+            } else {
+                ee_force.push_back(tmp_f1[l]);
+                l++;
+            }
         }
+        calcForceMapping(ee_force, enable_ee, joint_torques1);
     }
-    hrp::Matrix33 Kpp = hrp::Matrix33::Identity() * 450;
-    Kpp(2, 2) *= 2;
-    hrp::Matrix33 Kpd = ((Kpp.array() * 2 * m_robot->totalMass()).sqrt() * 1.6).matrix();
-    hrp::Matrix33 Krp = hrp::Matrix33::Identity() * 500;
-    hrp::Matrix33 Krd = hrp::Matrix33::Identity() * 50;
-    generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
-    std::vector<hrp::dmatrix> Gc1;
-    std::vector<hrp::dmatrix> Gc2;
-    std::vector<hrp::dvector6> tmp_f1, tmp_f2;
-    hrp::Vector3 f_foot = hrp::Vector3::Zero();
-    hrp::Vector3 tau_foot = hrp::Vector3::Zero();
-    Kpp = hrp::Matrix33::Identity() * 500;
-    Kpd = hrp::Matrix33::Identity() * 50;
-    Krp = hrp::Matrix33::Identity() * 100;
-    Krd = hrp::Matrix33::Identity() * 10;
-    for (size_t i = 0; i < 2; i++) {
-        if (!ref_contact_states[contact_states_index_map[ee_name[i]]]) {
-            Gc1.push_back(hrp::dmatrix::Zero(3, 6));
-            Gc2.push_back(hrp::dmatrix::Zero(3, 6));
-            Gc1.back().block(0, 0, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
-            Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_ee_p[contact_states_index_map[ee_name[i]]] - act_cog) * act_ee_R[contact_states_index_map[ee_name[i]]];
-            Gc1.back().block(0, 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
-            Gc2.back().block(0, 3, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
-            generateSwingFootForce(Kpp, Kpd, Krp, Krd, f_foot, tau_foot, contact_states_index_map[ee_name[i]]);
-            tmp_f1.push_back(hrp::dvector6::Zero());
-            tmp_f1.back() << f_foot, tau_foot;
-            f_ga -= Gc1.back() * tmp_f1.back();
-            tau_ga -= Gc2.back() * tmp_f1.back();
-        }
+    if (true) {
+        hrp::Vector3 f_ga, tau_ga;
+        std::vector<hrp::dvector6> ee_force;
+        std::vector<int> enable_ee;
+        enable_ee.push_back(2);
+        enable_ee.push_back(3);
+        hrp::Matrix33 Kpp = hrp::Matrix33::Zero();
+        hrp::Matrix33 Kpd = hrp::Matrix33::Zero();
+        hrp::Matrix33 Krp = hrp::Matrix33::Identity() * 500;
+        hrp::Matrix33 Krd = hrp::Matrix33::Identity() * 50;
+        generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
+        distributeForce(f_ga, tau_ga, enable_ee, ee_force, 1);
+        calcForceMapping(ee_force, enable_ee, joint_torques2);
     }
-    size_t k = 0;
-    size_t l = 0;
-    distributeForce(f_ga, tau_ga, enable_ee, tmp_f2, 0);
-    enable_ee.clear();
-    for (size_t i = 0; i < 2; i++) {
-        enable_ee.push_back(support_ee_index_map[ee_name[i]]);
-        if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
-            ee_force.push_back(tmp_f2[k]);
-            k++;
+    int count_max = 500;
+    switch (support_mode) {
+    case MODE_NORMAL:
+        joint_torques = joint_torques1;
+        break;
+    case MODE_SUPPORT:
+        joint_torques = joint_torques2;
+        break;
+    case MODE_SYNC_TO_NORMAL:
+        joint_torques = (joint_torques1 * support_transition_count
+                         + joint_torques2 * (count_max - support_transition_count)) / count_max;
+        if (support_transition_count == count_max) {
+            support_transition_count = 0;
+            support_mode = MODE_NORMAL;
         } else {
-            ee_force.push_back(tmp_f1[l]);
-            l++;
+            support_transition_count++;
         }
+        break;
+    case MODE_SYNC_TO_SUPPORT:
+        joint_torques = (joint_torques2 * support_transition_count
+                         + joint_torques1 * (count_max - support_transition_count)) / count_max;
+        if (support_transition_count == count_max) {
+            support_transition_count = 0;
+            support_mode = MODE_SUPPORT;
+        } else {
+            support_transition_count++;
+        }
+        break;
     }
-    hrp::dvector joint_torques;
-    calcForceMapping(ee_force, enable_ee, joint_torques);
     for ( int i = 0; i < m_robot->numJoints(); i++){
         m_robot->joint(i)->u = joint_torques(i);
     }
@@ -3511,10 +3557,12 @@ void Stabilizer::changeSupportMode(bool flag) {
     if (flag) {
         if (support_mode == MODE_NORMAL) {
             support_mode = MODE_SYNC_TO_SUPPORT;
+            support_transition_count = 0;
         }
     } else {
         if (support_mode == MODE_SUPPORT) {
             support_mode = MODE_SYNC_TO_NORMAL;
+            support_transition_count = 0;
         }
     }
 }
