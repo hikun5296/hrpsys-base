@@ -147,7 +147,7 @@ class Stabilizer
   size_t makeTauz2Constraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   void makeJointTorqueLimit(double pgain[], double dgain[], hrp::dvector& upper_limit, hrp::dvector& lower_limit);
   size_t makeCopConstraint(const std::vector<int>& enable_ee, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit);
-  void distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, std::vector<hrp::dvector6>& ee_force);
+  bool distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee, std::vector<hrp::dvector6>& ee_force, int solver_id);
   void generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_foot, hrp::Vector3& tau_foot, size_t i);
   void generateForce(const hrp::Matrix33& foot_origin_rot, const hrp::Matrix33& Kpp, const hrp::Matrix33& Kpd, const hrp::Matrix33 Krp, const hrp::Matrix33 Krd, hrp::Vector3& f_ga, hrp::Vector3& tau_ga);
   void calcEforce2ZmpMatrix(hrp::dmatrix& ret, const std::vector<int>& enable_ee, const double zmp_z);
@@ -363,7 +363,7 @@ class Stabilizer
   double total_mass, transition_time, cop_check_margin, contact_decision_threshold;
   std::vector<double> cp_check_margin, tilt_margin;
   OpenHRP::StabilizerService::EmergencyCheckMode emergency_check_mode;
-  qpOASES::SQProblem qp_solver;
+  std::vector<qpOASES::SQProblem> qp_solver;
 };
 
 

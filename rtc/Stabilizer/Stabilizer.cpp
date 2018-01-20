@@ -545,7 +545,8 @@ RTC::ReturnCode_t Stabilizer::onInitialize()
   m_allEEComp.data.length(stikp.size() * 6); // 6 is pos+rot dim
   m_debugData.data.length(1); m_debugData.data[0] = 0.0;
 
-  qp_solver = qpOASES::SQProblem(1, 1);
+  qp_solver.push_back(qpOASES::SQProblem(1, 1));
+  qp_solver.push_back(qpOASES::SQProblem(1, 1));
   //
   szd = new SimpleZMPDistributor(dt);
   std::vector<std::vector<Eigen::Vector2d> > support_polygon_vec;
@@ -2984,7 +2985,7 @@ void Stabilizer::torqueST()
     }
     size_t k = 0;
     size_t l = 0;
-    distributeForce(f_ga, tau_ga, enable_ee, tmp_f2);
+    distributeForce(f_ga, tau_ga, enable_ee, tmp_f2, 0);
     enable_ee.clear();
     for (size_t i = 0; i < 2; i++) {
         enable_ee.push_back(support_ee_index_map[ee_name[i]]);
@@ -3053,7 +3054,7 @@ void Stabilizer::generateSwingFootForce(const hrp::Matrix33& Kpp, const hrp::Mat
     tau_foot = 2 * (d * hrp::Matrix33::Identity() + hrp::hat(e)) * Krp * e + Krd * act_ee_omega[i];
 }
 
-void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee,  std::vector<hrp::dvector6>& ee_force)
+bool Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& tau_ga, const std::vector<int>& enable_ee,  std::vector<hrp::dvector6>& ee_force, int solver_id)
 {
     hrp::dvector6 f_tau;
     f_tau << f_ga, tau_ga;
@@ -3148,33 +3149,28 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
     qpOASES::real_t* xOpt = (qpOASES::real_t*)output.data();
 
     //solve QP
-    if (qp_solver.getNV() != state_dim || qp_solver.getNC() != const_dim) {
-        qp_solver = qpOASES::SQProblem(state_dim, const_dim);
+    if (qp_solver[solver_id].getNV() != state_dim || qp_solver[solver_id].getNC() != const_dim) {
+        qp_solver[solver_id] = qpOASES::SQProblem(state_dim, const_dim);
     }
     qpOASES::Options options;
     options.printLevel = qpOASES::PL_NONE;
-    qp_solver.setOptions(options);
+    qp_solver[solver_id].setOptions(options);
     int nWSR = 100;
     qpOASES::real_t time = 0.0000;
     qpOASES::returnValue status;
-    if (qp_solver.isInitialised()) {
-        status = qp_solver.hotstart(H, g, A, lb, ub, lbA, ubA, nWSR, &time);
+    if (qp_solver[solver_id].isInitialised()) {
+        status = qp_solver[solver_id].hotstart(H, g, A, lb, ub, lbA, ubA, nWSR, &time);
     } else {
-        status = qp_solver.init(H, g, A, lb, ub, lbA, ubA, nWSR);
+        status = qp_solver[solver_id].init(H, g, A, lb, ub, lbA, ubA, nWSR);
     }
-    int qpcounter = 1;
-    while (!qp_solver.isSolved() && !qp_solver.isInfeasible() && qpcounter < state_dim + const_dim) {
-        status = qp_solver.hotstart(g, lb, ub, lbA, ubA, nWSR, &time);
-        qpcounter++;
-    }
-    qp_solver.getPrimalSolution(xOpt);
+    qp_solver[solver_id].getPrimalSolution(xOpt);
     for (size_t i = 0; i < ee_num; i++) {
         ee_force.push_back(output.col(i));
     }
     if (DEBUGP) {
         hrp::dvector y(state_dim+const_dim);
         qpOASES::real_t* yOpt = (qpOASES::real_t*)y.data();
-        qp_solver.getDualSolution(yOpt);
+        qp_solver[solver_id].getDualSolution(yOpt);
         size_t tmp_index = 0;
         Eigen::Map<hrp::dmatrix> tmp1(y.segment(tmp_index, state_dim).data(), 6, ee_num);
         tmp_index += state_dim;
@@ -3187,10 +3183,8 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
         Eigen::Map<hrp::dvector> tmp5(y.segment(tmp_index, tauz_dim).data(), 8, ee_num);
         tmp_index += tauz_dim;
         std::cerr << "[" << m_profile.instance_name << "] qp result" << std::endl;
-        std::cerr << "[" << m_profile.instance_name << "] try num = " << qpcounter << std::endl;
-        if (qp_solver.isInfeasible()) {
-            std::cerr << "[" << m_profile.instance_name << "] optimization failed " << qpcounter << std::endl;
-        }
+        std::cerr << "[" << m_profile.instance_name << "] status = " << qpOASES::getSimpleStatus(status) << std::endl;
+        std::cerr << "[" << m_profile.instance_name << "] detailed status = " << status << std::endl;
         std::cerr << "[" << m_profile.instance_name << "] end efector force =" << std::endl;
         std::cerr << output.transpose() << std::endl;
         std::cerr << "[" << m_profile.instance_name << "] end efector force and friction limit" << std::endl;
@@ -3229,8 +3223,9 @@ void Stabilizer::distributeForce(const hrp::Vector3& f_ga, const hrp::Vector3& t
             if (tmp4(i) > 0)
                 std::cerr << "[" << m_profile.instance_name << "]     side(" << i << ") limit" << std::endl;
         }
-        std::cerr << "[" << m_profile.instance_name << "] optimized value = " << qp_solver.getObjVal() << std::endl;
+        std::cerr << "[" << m_profile.instance_name << "] optimized value = " << qp_solver[solver_id].getObjVal() << std::endl;
     }
+    return qp_solver[solver_id].isSolved() ? true : false;
 }
 
 size_t Stabilizer::makeFrictionConstraint(const std::vector<int>& enable_ee, double coef, hrp::dmatrix& const_matrix, hrp::dvector& upper_limit, hrp::dvector& lower_limit)
