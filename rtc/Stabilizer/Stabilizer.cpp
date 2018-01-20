@@ -2944,8 +2944,8 @@ void Stabilizer::torqueST()
     calcFootOriginCoords (foot_origin_pos, foot_origin_rot);
 
     hrp::Vector3 f_ga, tau_ga;
-    std::vector<hrp::dvector6> ee_force, ee_force2;
-    std::vector<int> enable_ee, enable_ee2;
+    std::vector<hrp::dvector6> ee_force;
+    std::vector<int> enable_ee;
     std::string ee_name[2] = {"rleg", "lleg"};
     for (size_t i = 0; i < 2; i++) {
         if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
@@ -2960,42 +2960,43 @@ void Stabilizer::torqueST()
     generateForce(foot_origin_rot, Kpp, Kpd, Krp, Krd, f_ga, tau_ga);
     std::vector<hrp::dmatrix> Gc1;
     std::vector<hrp::dmatrix> Gc2;
-    std::vector<hrp::dvector6> tmp_f;
+    std::vector<hrp::dvector6> tmp_f1, tmp_f2;
     hrp::Vector3 f_foot = hrp::Vector3::Zero();
     hrp::Vector3 tau_foot = hrp::Vector3::Zero();
     Kpp = hrp::Matrix33::Identity() * 500;
     Kpd = hrp::Matrix33::Identity() * 50;
     Krp = hrp::Matrix33::Identity() * 100;
     Krd = hrp::Matrix33::Identity() * 10;
-    for (size_t i = 0; i < act_ee_p.size(); i++) {
-        if (!ref_contact_states[i]) {
+    for (size_t i = 0; i < 2; i++) {
+        if (!ref_contact_states[contact_states_index_map[ee_name[i]]]) {
             Gc1.push_back(hrp::dmatrix::Zero(3, 6));
             Gc2.push_back(hrp::dmatrix::Zero(3, 6));
-            Gc1.back().block(0, 0, 3, 3) = act_ee_R[i];
-            Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_ee_p[i] - act_cog) * act_ee_R[i];
+            Gc1.back().block(0, 0, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
+            Gc2.back().block(0, 0, 3, 3) = hrp::hat(act_ee_p[contact_states_index_map[ee_name[i]]] - act_cog) * act_ee_R[contact_states_index_map[ee_name[i]]];
             Gc1.back().block(0, 3, 3, 3) = hrp::dmatrix::Zero(3, 3);
-            Gc2.back().block(0, 3, 3, 3) = act_ee_R[i];
-            generateSwingFootForce(Kpp, Kpd, Krp, Krd, f_foot, tau_foot, i);
-            tmp_f.push_back(hrp::dvector6::Zero());
-            tmp_f.back() << f_foot, tau_foot;
-            f_ga -= Gc1.back() * tmp_f.back();
-            tau_ga -= Gc2.back() * tmp_f.back();
+            Gc2.back().block(0, 3, 3, 3) = act_ee_R[contact_states_index_map[ee_name[i]]];
+            generateSwingFootForce(Kpp, Kpd, Krp, Krd, f_foot, tau_foot, contact_states_index_map[ee_name[i]]);
+            tmp_f1.push_back(hrp::dvector6::Zero());
+            tmp_f1.back() << f_foot, tau_foot;
+            f_ga -= Gc1.back() * tmp_f1.back();
+            tau_ga -= Gc2.back() * tmp_f1.back();
         }
     }
     size_t k = 0;
     size_t l = 0;
-    distributeForce(f_ga, tau_ga, enable_ee, ee_force);
+    distributeForce(f_ga, tau_ga, enable_ee, tmp_f2);
+    enable_ee.clear();
     for (size_t i = 0; i < 2; i++) {
-        enable_ee2.push_back(support_ee_index_map[ee_name[i]]);
+        enable_ee.push_back(support_ee_index_map[ee_name[i]]);
         if (ref_contact_states[contact_states_index_map[ee_name[i]]]) {
-            ee_force2.push_back(ee_force[k]);
+            ee_force.push_back(tmp_f2[k]);
             k++;
         } else {
-            ee_force2.push_back(tmp_f[l]);
+            ee_force.push_back(tmp_f1[l]);
             l++;
         }
     }
-    calcForceMapping(ee_force2, enable_ee2);
+    calcForceMapping(ee_force, enable_ee);
 
     for ( int i = 0; i < m_robot->numJoints(); i++ ){
         m_robot->joint(i)->q = qrefv[i];
